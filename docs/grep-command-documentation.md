@@ -255,9 +255,8 @@ The final prompt sent to the LLM contains both:
 The picker is rendered entirely in JavaScript inside the WebView2. It is a transient element: the host injects it on demand, the user answers, the modal disappears.
 
 <p align="center">
-  <img src="docs/images/screenshots/grep-plugin-dark.png?raw=true" width="700"/>
-</p>
-
+  <img src="images/screenshots/grep-plugin-dark.png?raw=true" width="700"/>
+</p>       
 <br>
 
 ### 7.1. Layout
