@@ -1,0 +1,3181 @@
+﻿(function () {
+
+  const INPUT_HOST_ID = "InputHost";
+  const RESPONSE_HOST_ID = "ResponseContent";
+  const MAX_LINES = 8;
+
+  function ensureInputBubble() {
+
+    let integrationFunctionBtn;
+    let integrationMcpBtn;
+    let integrationSkillsBtn;
+    let integrationAgentsBtn;
+
+    let mediaCreateImageBtn;
+    let mediaCreateVideoBtn;
+    let mediaCreateAudioBtn;
+    let mediaSpeechToTextBtn;
+    let mediaTextToSpeechBtn;
+
+    let endpointBtn;
+    let endpointChatCompletionBtn;
+    let endpointChatResponseBtn;
+    let endpointMessageBtn;
+    let endpointGenerateContentBtn;
+    let endpointInteractionsBtn;
+    let endpointConversationBtn;
+    let customBtn;
+    let systemPromptBtn;
+    let modelBtn;
+
+    const INPUT_BUBBLE_I18N_EVENT =
+      window.AppI18n && window.AppI18n.eventName
+        ? window.AppI18n.eventName
+        : "app:i18n:changed";
+
+    function t(key, fallback, vars) {
+      if (window.AppI18n && typeof window.AppI18n.t === "function") {
+        return window.AppI18n.t(key, fallback, vars);
+      }
+
+      const source = String(fallback == null ? "" : fallback);
+
+      return source.replace(/\{([a-zA-Z0-9_]+)\}/g, function (_, token) {
+        if (vars && Object.prototype.hasOwnProperty.call(vars, token)) {
+          const value = vars[token];
+          return value == null ? "" : String(value);
+        }
+
+        return "{" + token + "}";
+      });
+    }
+
+    function setMenuItemLabel(btn, label) {
+      if (!btn) return;
+
+      btn.dataset.label = label;
+
+      const labelSpan = btn.querySelector(".input-menu-item-label");
+      if (labelSpan) {
+        labelSpan.textContent = label;
+      }
+    }
+
+    function getEndpointLabel(endpointFeature) {
+      if (endpointFeature === "endpoint-chat-completion")
+        return t("input.endpoint.chatCompletion", "v1/chat/completion");
+
+      if (endpointFeature === "endpoint-chat-response")
+        return t("input.endpoint.chatResponse", "v1/chat/response");
+
+      if (endpointFeature === "endpoint-message")
+        return t("input.endpoint.message", "v1/message");
+
+      if (endpointFeature === "endpoint-generate-content")
+        return t("input.endpoint.generateContent", ":generateContent");
+
+      if (endpointFeature === "endpoint-interactions")
+        return t("input.endpoint.interactions", "v1/interactions");
+
+      if (endpointFeature === "endpoint-conversation")
+        return t("input.endpoint.conversation", "v1/conversation");
+
+      return "";
+    }
+
+    function getEndpointProviderLabel(endpointFeature) {
+      if (endpointFeature === "endpoint-chat-completion")
+        return t("input.endpoint.provider.chatCompletion", "OpenAI, DeepSeek, MistralAI");
+
+      if (endpointFeature === "endpoint-chat-response")
+        return t("input.endpoint.provider.chatResponse", "OpenAI");
+
+      if (endpointFeature === "endpoint-message")
+        return t("input.endpoint.provider.message", "Claude");
+
+      if (endpointFeature === "endpoint-generate-content")
+        return t("input.endpoint.provider.generateContent", "Gemini");
+
+      if (endpointFeature === "endpoint-interactions")
+        return t("input.endpoint.provider.interactions", "Gemini");
+
+      if (endpointFeature === "endpoint-conversation")
+        return t("input.endpoint.provider.conversation", "MistralAI");
+
+      return "";
+    }
+
+    function getThinkingLabel(level) {
+      if (level === "low")
+        return t("input.thinking.low", "Low");
+
+      if (level === "medium")
+        return t("input.thinking.medium", "Medium");
+
+      if (level === "high")
+        return t("input.thinking.high", "High");
+
+      return "";
+    }
+
+    function applyInputBubbleDictionary() {
+      textarea.placeholder = t("input.placeholder.askQuestion", "Ask a question...");
+
+      setMenuItemLabel(endpointBtn, t("input.menu.endpoint", "Endpoint"));
+      setMenuItemLabel(webResearchBtn, t("input.menu.webResearch", "Web research"));
+      setMenuItemLabel(thinkingBtn, t("input.menu.thinking", "Thinking"));
+      setMenuItemLabel(fileBtn, t("input.menu.attachFiles", "Attach files"));
+      setMenuItemLabel(knowledgeBtn, t("input.menu.knowledgeSearch", "Knowledge search"));
+      setMenuItemLabel(visionBtn, t("input.menu.vision", "Vision"));
+      setMenuItemLabel(deepResearchBtn, t("input.menu.deepResearch", "Deep Research"));
+      setMenuItemLabel(integrationBtn, t("input.menu.integration", "Integration"));
+      setMenuItemLabel(mediaBtn, t("input.menu.media", "Media"));
+      setMenuItemLabel(customBtn, t("input.menu.custom", "Custom"));
+
+      setMenuItemLabel(integrationFunctionBtn, t("input.integration.function", "Function"));
+      setMenuItemLabel(integrationMcpBtn, t("input.integration.mcp", "MCP"));
+      setMenuItemLabel(integrationSkillsBtn, t("input.integration.skills", "Skills"));
+      setMenuItemLabel(integrationAgentsBtn, t("input.integration.agents", "Agents"));
+
+      setMenuItemLabel(mediaCreateImageBtn, t("input.media.createImage", "Create Image"));
+      setMenuItemLabel(mediaCreateVideoBtn, t("input.media.createVideo", "Create Video"));
+      setMenuItemLabel(mediaCreateAudioBtn, t("input.media.createAudio", "Create Audio"));
+      setMenuItemLabel(mediaSpeechToTextBtn, t("input.media.speechToText", "Speech to text"));
+      setMenuItemLabel(mediaTextToSpeechBtn, t("input.media.textToSpeech", "Text to speech"));
+
+      setMenuItemLabel(endpointChatCompletionBtn, t("input.endpoint.chatCompletion", "v1/chat/completion"));
+      setMenuItemLabel(endpointChatResponseBtn, t("input.endpoint.chatResponse", "v1/chat/response"));
+      setMenuItemLabel(endpointMessageBtn, t("input.endpoint.message", "v1/message"));
+      setMenuItemLabel(endpointGenerateContentBtn, t("input.endpoint.generateContent", ":generateContent"));
+      setMenuItemLabel(endpointInteractionsBtn, t("input.endpoint.interactions", "v1/interactions"));
+      setMenuItemLabel(endpointConversationBtn, t("input.endpoint.conversation", "v1/conversation"));
+
+      endpointChatCompletionBtn.title = t("input.endpoint.provider.chatCompletion", "OpenAI, DeepSeek, MistralAI");
+      endpointChatResponseBtn.title = t("input.endpoint.provider.chatResponse", "OpenAI");
+      endpointMessageBtn.title = t("input.endpoint.provider.message", "Claude");
+      endpointGenerateContentBtn.title = t("input.endpoint.provider.generateContent", "Gemini");
+      endpointInteractionsBtn.title = t("input.endpoint.provider.interactions", "Gemini");
+      endpointConversationBtn.title = t("input.endpoint.provider.conversation", "MistralAI");
+
+      const thinkingButtons = thinkingMenu.querySelectorAll("button");
+
+      if (thinkingButtons[0])
+        setMenuItemLabel(thinkingButtons[0], t("input.thinking.low", "Low"));
+
+      if (thinkingButtons[1])
+        setMenuItemLabel(thinkingButtons[1], t("input.thinking.medium", "Medium"));
+
+      if (thinkingButtons[2])
+        setMenuItemLabel(thinkingButtons[2], t("input.thinking.high", "High"));
+
+      systemPromptLabel.textContent = t("input.menu.settings", "settings");
+      modelLabel.textContent = t("input.menu.model", "model");
+    }
+
+    let host = document.getElementById(INPUT_HOST_ID);
+    if (!host) {
+      host = document.createElement("div");
+      host.id = INPUT_HOST_ID;
+      document.body.appendChild(host);
+    }
+
+    if (host.__inputBubbleInitialized) {
+      window.updateInputBubbleLayout && window.updateInputBubbleLayout();
+      return;
+    }
+
+    host.__inputBubbleInitialized = true;
+    host.__features = new Set();
+    host.__files = [];
+    host.__images = [];
+    host.__knowledgeFiles = [];
+    host.__speechToTextFiles = [];
+    host.__integrationFunctions = [];
+    host.__integrationMcps = [];
+    host.__integrationSkills = [];
+    host.__integrationAgents = [];
+    host.__customItems = [];
+    host.__welcomeText = "";
+    host.__sendButtonState = "input-mode";
+
+    function buildEnabledFunctionsState() {
+      return {
+        endpoint: true,
+        endpointChatCompletion: true,
+        endpointChatResponse: true,
+        endpointMessage: true,
+        endpointGenerateContent: true,
+        endpointInteractions: true,
+        endpointConversation: true,
+
+        webResearch: true,
+
+        thinking: true,
+        thinkingLow: true,
+        thinkingMedium: true,
+        thinkingHigh: true,
+
+        chatFiles: true,
+        knowledgeSearch: true,
+        vision: true,
+        deepResearch: true,
+
+        integration: true,
+        integrationFunction: true,
+        integrationMcp: true,
+        integrationSkills: true,
+        integrationAgents: true,
+
+        media: true,
+        mediaCreateImage: true,
+        mediaCreateVideo: true,
+        mediaCreateAudio: true,
+        mediaSpeechToText: true,
+        mediaTextToSpeech: true,
+
+        custom: true,
+        systemPrompt: true,
+        model: true
+      };
+    }
+
+    host.__enabledFunctions = buildEnabledFunctionsState();
+
+    const INPUT_HOST_BASE_TRANSITION =
+      "left 180ms ease, width 180ms ease, top 220ms ease, bottom 220ms ease";
+
+    const INPUT_HOST_SYNC_TRANSITION =
+      "top 220ms ease, bottom 220ms ease";
+
+    let horizontalSyncFrameId = 0;
+    let horizontalSyncUntil = 0;
+    let horizontalSyncActive = false;
+
+    Object.assign(host.style, {
+      position: "fixed",
+      left: "50%",
+      zIndex: "1000",
+      width: "min(760px, calc(100vw - 32px))",
+      transform: "translateX(-50%)",
+      transition: INPUT_HOST_BASE_TRANSITION
+    });
+
+    const welcome = document.createElement("div");
+    welcome.id = "InputBubbleWelcome";
+
+    Object.assign(welcome.style, {
+      position: "absolute",
+      left: "0",
+      bottom: "calc(100% + 18px)",
+      display: "none",
+      width: "100%",
+      boxSizing: "border-box",
+      padding: "0 12px",
+      color: "var(--input-welcome-text, #f3f3f3)",
+      fontFamily: '"Segoe UI", sans-serif',
+      fontSize: "22px",
+      fontWeight: "500",
+      lineHeight: "1.3",
+      textAlign: "center",
+      whiteSpace: "normal",
+      overflowWrap: "anywhere",
+      pointerEvents: "none",
+      userSelect: "none"
+    });
+
+    function updateWelcomeVisibility(forceCentered) {
+      const hasText = !!(host.__welcomeText && host.__welcomeText.trim());
+      const isCentered = typeof forceCentered === "boolean"
+        ? forceCentered
+        : !hasConversation();
+
+      welcome.textContent = host.__welcomeText || "";
+      welcome.style.display = (hasText && isCentered) ? "block" : "none";
+    }
+
+    const shell = document.createElement("div");
+    shell.id = "InputBubbleShell";
+
+    Object.assign(shell.style, {
+      position: "relative",
+      display: "flex",
+      flexDirection: "column",
+      gap: "6px",
+      padding: "12px",
+      borderRadius: "28px",
+      background: "var(--input-shell-bg, #2f2f2f)",
+      border: "1px solid var(--input-shell-border, rgba(255,255,255,0.08))",
+      boxShadow: "var(--input-shell-shadow, 0 10px 30px rgba(0,0,0,0.35))"
+    });
+
+    const filesRow = document.createElement("div");
+    filesRow.id = "InputFilesRow";
+
+    Object.assign(filesRow.style, {
+      display: "none",
+      flexWrap: "wrap",
+      gap: "6px",
+      padding: "2px 6px"
+    });
+
+    const row = document.createElement("div");
+
+    Object.assign(row.style, {
+      display: "grid",
+      gridTemplateColumns: "48px 1fr 18px 44px 44px",
+      gridTemplateRows: "auto auto",
+      alignItems: "center",
+      gap: "6px"
+    });
+
+    const featuresRow = document.createElement("div");
+    featuresRow.id = "InputFeaturesRow";
+
+    Object.assign(featuresRow.style, {
+      display: "none",
+      flexWrap: "wrap",
+      gap: "6px",
+      padding: "2px 6px"
+    });
+
+    const menuBtn = document.createElement("button");
+    menuBtn.id = "InputFunctionButton";
+    menuBtn.textContent = "\uE710";
+
+    const textarea = document.createElement("textarea");
+    textarea.id = "InputBubbleText";
+    textarea.rows = 1;
+    textarea.placeholder = "Ask a question...";
+
+    const sendBtn = document.createElement("button");
+    sendBtn.id = "InputSendButton";
+    sendBtn.textContent = "\uF5B0";
+
+    const audioBtn = document.createElement("button");
+    audioBtn.id = "InputAudioButton";
+    audioBtn.textContent = "\uE1D6";
+
+    const dropdown = document.createElement("div");
+    dropdown.id = "InputFunctionMenu";
+    dropdown.hidden = true;
+
+    const menuItemsZone = document.createElement("div");
+    menuItemsZone.id = "InputFunctionMenuItems";
+
+    Object.assign(menuItemsZone.style, {
+      display: "flex",
+      flexDirection: "column",
+      minHeight: "0",
+      overflowX: "hidden",
+      overflowY: "hidden",
+      boxSizing: "border-box"
+    });
+
+    const menuIconsZone = document.createElement("div");
+    menuIconsZone.id = "InputFunctionMenuIcons";
+
+    host.__uiState = {
+      showFunctionButton: true,
+      showAudioButton: false
+    };
+
+    Object.assign(dropdown.style, {
+      position: "absolute",
+      left: "0",
+      top: "-10px",
+      transform: "translateY(calc(-100% + 6px)) scale(0.985)",
+      transformOrigin: "bottom left",
+      opacity: "0",
+      minWidth: "220px",
+      padding: "8px",
+      borderRadius: "14px",
+      background: "var(--input-menu-bg, #2b2b2b)",
+      border: "1px solid var(--input-menu-border, rgba(255,255,255,0.08))",
+      boxSizing: "border-box",
+      overflow: "visible",
+      zIndex: "1001",
+      transition: "opacity 180ms ease, transform 180ms ease",
+      willChange: "opacity, transform"
+    });
+
+    Object.assign(menuIconsZone.style, {
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+      marginTop: "8px",
+      paddingTop: "8px",
+      borderTop: "1px solid var(--input-menu-border, rgba(255,255,255,0.08))"
+    });
+
+    const thinkingMenu = document.createElement("div");
+    thinkingMenu.id = "InputThinkingMenu";
+    thinkingMenu.hidden = true;
+
+    Object.assign(thinkingMenu.style, {
+      position: "absolute",
+      left: "100%",
+      top: "0",
+      marginLeft: "6px",
+      minWidth: "160px",
+      padding: "6px",
+      borderRadius: "12px",
+      background: "var(--input-menu-bg, #2b2b2b)",
+      border: "1px solid var(--input-menu-border, rgba(255,255,255,0.08))",
+      boxSizing: "border-box",
+      overflowX: "hidden",
+      overflowY: "hidden",
+      zIndex: "1002",
+      opacity: "0",
+      transform: "translateY(6px) scale(0.97)",
+      transformOrigin: "top left",
+      transition: "opacity 180ms ease, transform 180ms ease",
+      willChange: "opacity, transform"
+    });
+
+    const endpointMenu = document.createElement("div");
+    endpointMenu.id = "InputEndpointMenu";
+    endpointMenu.hidden = true;
+
+    Object.assign(endpointMenu.style, {
+      position: "absolute",
+      left: "100%",
+      top: "0",
+      marginLeft: "6px",
+      minWidth: "220px",
+      padding: "6px",
+      borderRadius: "12px",
+      background: "var(--input-menu-bg, #2b2b2b)",
+      border: "1px solid var(--input-menu-border, rgba(255,255,255,0.08))",
+      boxSizing: "border-box",
+      overflowX: "hidden",
+      overflowY: "hidden",
+      zIndex: "1002",
+      opacity: "0",
+      transform: "translateY(6px) scale(0.97)",
+      transformOrigin: "top left",
+      transition: "opacity 180ms ease, transform 180ms ease",
+      willChange: "opacity, transform"
+    });
+
+    const integrationMenu = document.createElement("div");
+    integrationMenu.id = "InputIntegrationMenu";
+    integrationMenu.hidden = true;
+
+    Object.assign(integrationMenu.style, {
+      position: "absolute",
+      left: "100%",
+      top: "0",
+      marginLeft: "6px",
+      minWidth: "180px",
+      padding: "6px",
+      borderRadius: "12px",
+      background: "var(--input-menu-bg, #2b2b2b)",
+      border: "1px solid var(--input-menu-border, rgba(255,255,255,0.08))",
+      boxSizing: "border-box",
+      overflowX: "hidden",
+      overflowY: "hidden",
+      zIndex: "1002",
+      opacity: "0",
+      transform: "translateY(6px) scale(0.7)",
+      transformOrigin: "top left",
+      transition: "opacity 180ms ease, transform 180ms ease",
+      willChange: "opacity, transform"
+    });
+
+    const mediaMenu = document.createElement("div");
+    mediaMenu.id = "InputMediaMenu";
+    mediaMenu.hidden = true;
+
+    Object.assign(mediaMenu.style, {
+      position: "absolute",
+      left: "100%",
+      top: "0",
+      marginLeft: "6px",
+      minWidth: "200px",
+      padding: "6px",
+      borderRadius: "12px",
+      background: "var(--input-menu-bg, #2b2b2b)",
+      border: "1px solid var(--input-menu-border, rgba(255,255,255,0.08))",
+      boxSizing: "border-box",
+      overflowX: "hidden",
+      overflowY: "hidden",
+      zIndex: "1002",
+      opacity: "0",
+      transform: "translateY(6px) scale(0.97)",
+      transformOrigin: "top left",
+      transition: "opacity 180ms ease, transform 180ms ease",
+      willChange: "opacity, transform"
+    });
+
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.multiple = true;
+    fileInput.style.display = "none";
+
+    const knowledgeInput = document.createElement("input");
+    knowledgeInput.type = "file";
+    knowledgeInput.multiple = true;
+    knowledgeInput.style.display = "none";
+
+    const imageInput = document.createElement("input");
+    imageInput.type = "file";
+    imageInput.accept = "image/*";
+    imageInput.multiple = true;
+    imageInput.style.display = "none";
+
+    document.body.appendChild(fileInput);
+    document.body.appendChild(knowledgeInput);
+    document.body.appendChild(imageInput);
+
+    function styleButton(btn) {
+      Object.assign(btn.style, {
+        width: "36px",
+        height: "36px",
+        minWidth: "36px",
+        minHeight: "36px",
+        padding: "0",
+        borderRadius: "18px",
+        border: "none",
+        background: "var(--input-button-bg, #3a3a3a)",
+        color: "var(--input-button-text, #ffffff)",
+        cursor: "pointer",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        boxSizing: "border-box",
+        lineHeight: "1",
+        fontFamily: '"Segoe UI Symbol","Segoe UI",sans-serif',
+        fontSize: "16px",
+        transition: "background 140ms ease, color 140ms ease"
+      });
+    }
+
+    function addHover(btn) {
+      btn.addEventListener("mouseenter", function () {
+        btn.style.background = "var(--input-button-hover-bg, #ffffff)";
+        btn.style.color = "var(--input-button-hover-text, #111)";
+      });
+
+      btn.addEventListener("mouseleave", function () {
+        btn.style.background = "var(--input-button-bg, #3a3a3a)";
+        btn.style.color = "var(--input-button-text, #ffffff)";
+      });
+    }
+
+    styleButton(menuBtn);
+    styleButton(sendBtn);
+    styleButton(audioBtn);
+    styleButton(menuBtn);
+
+    sendBtn.style.width = "48px";
+    sendBtn.style.height = "48px";
+    sendBtn.style.minWidth = "48px";
+    sendBtn.style.minHeight = "48px";
+    sendBtn.style.borderRadius = "24px";
+    sendBtn.style.fontFamily = '"Segoe Fluent Icons"';
+    sendBtn.style.fontSize = "18px";
+    sendBtn.style.paddingLeft = "0";
+
+    audioBtn.style.fontFamily = '"Segoe Fluent Icons"';
+    audioBtn.style.fontSize = "16px";
+
+    menuBtn.style.fontFamily = '"Segoe Fluent Icons"';
+    menuBtn.style.fontSize = "16px";
+
+    addHover(menuBtn);
+    addHover(sendBtn);
+    addHover(audioBtn);
+
+    menuBtn.style.transform = "translateY(-3px)";
+    sendBtn.style.transform = "translateY(-3px)";
+    audioBtn.style.transform = "translateY(-3px)";
+
+    audioBtn.style.fontSize = "15px";
+
+    const SEND_BUTTON_INPUT_MODE = "input-mode";
+    const SEND_BUTTON_STOP_MODE = "stop-mode";
+    const SEND_BUTTON_INPUT_ICON = "\uF5B0";
+    const SEND_BUTTON_STOP_ICON = "\uE747";
+
+    function applySendButtonStateUI() {
+      const state = host.__sendButtonState === SEND_BUTTON_STOP_MODE
+        ? SEND_BUTTON_STOP_MODE
+        : SEND_BUTTON_INPUT_MODE;
+
+      host.__sendButtonState = state;
+      sendBtn.dataset.state = state;
+      sendBtn.textContent = state === SEND_BUTTON_STOP_MODE
+        ? SEND_BUTTON_STOP_ICON
+        : SEND_BUTTON_INPUT_ICON;
+    }
+
+    function setSendButtonState(state) {
+      if (state !== SEND_BUTTON_INPUT_MODE && state !== SEND_BUTTON_STOP_MODE)
+        return false;
+
+      host.__sendButtonState = state;
+      applySendButtonStateUI();
+      return true;
+    }
+
+    Object.assign(textarea.style, {
+      resize: "none",
+      border: "none",
+      outline: "none",
+      background: "transparent",
+      color: "var(--input-text, #e8e8e8)",
+      fontFamily: '"Segoe UI", sans-serif',
+      fontSize: "17px",
+      lineHeight: "1.45",
+      padding: "6px 10px 6px 8px",
+      width: "100%",
+      margin: "0",
+      overflowY: "auto",
+      gridColumn: "2 / 3",
+      gridRow: "1 / span 2",
+      boxSizing: "border-box"
+    });
+
+    if (!document.getElementById("input-text-scrollbar-style")) {
+      const scrollbarStyle = document.createElement("style");
+      scrollbarStyle.id = "input-text-scrollbar-style";
+      scrollbarStyle.textContent = `
+        #InputBubbleText {
+          scrollbar-width: thin;
+          scrollbar-color: var(--scrollbar-thumb, #4a4a4a) transparent;
+        }
+        #InputBubbleText::-webkit-scrollbar { width: 8px; }
+        #InputBubbleText::-webkit-scrollbar-track { background: transparent; }
+        #InputBubbleText::-webkit-scrollbar-thumb {
+          background: var(--scrollbar-thumb, #4a4a4a);
+          border-radius: 6px;
+        }
+        #InputBubbleText::-webkit-scrollbar-thumb:hover {
+          background: var(--scrollbar-thumb-hover, #6a6a6a);
+        }
+      `;
+      document.head.appendChild(scrollbarStyle);
+    }
+
+    if (!document.getElementById("input-chip-style")) {
+      const chipStyle = document.createElement("style");
+      chipStyle.id = "input-chip-style";
+      chipStyle.textContent = `
+        .input-chip-close {
+          opacity: 0;
+          transition: opacity 120ms ease;
+          cursor: pointer;
+        }
+
+        .input-chip:hover .input-chip-close {
+          opacity: 1;
+        }
+      `;
+      document.head.appendChild(chipStyle);
+    }
+
+    if (!document.getElementById("input-menu-scrollbar-style")) {
+      const menuScrollbarStyle = document.createElement("style");
+      menuScrollbarStyle.id = "input-menu-scrollbar-style";
+      menuScrollbarStyle.textContent = `
+        #InputFunctionMenuItems,
+        #InputThinkingMenu,
+        #InputEndpointMenu,
+        #InputIntegrationMenu,
+        #InputMediaMenu {
+          scrollbar-width: thin;
+          scrollbar-color: var(--scrollbar-thumb, #4a4a4a) transparent;
+        }
+
+        #InputFunctionMenuItems::-webkit-scrollbar,
+        #InputThinkingMenu::-webkit-scrollbar,
+        #InputEndpointMenu::-webkit-scrollbar,
+        #InputIntegrationMenu::-webkit-scrollbar,
+        #InputMediaMenu::-webkit-scrollbar {
+          width: 8px;
+        }
+
+        #InputFunctionMenuItems::-webkit-scrollbar-track,
+        #InputThinkingMenu::-webkit-scrollbar-track,
+        #InputEndpointMenu::-webkit-scrollbar-track,
+        #InputIntegrationMenu::-webkit-scrollbar-track,
+        #InputMediaMenu::-webkit-scrollbar-track {
+          background: transparent;
+        }
+
+        #InputFunctionMenuItems::-webkit-scrollbar-thumb,
+        #InputThinkingMenu::-webkit-scrollbar-thumb,
+        #InputEndpointMenu::-webkit-scrollbar-thumb,
+        #InputIntegrationMenu::-webkit-scrollbar-thumb,
+        #InputMediaMenu::-webkit-scrollbar-thumb {
+          background: var(--scrollbar-thumb, #4a4a4a);
+          border-radius: 6px;
+        }
+
+        #InputFunctionMenuItems::-webkit-scrollbar-thumb:hover,
+        #InputThinkingMenu::-webkit-scrollbar-thumb:hover,
+        #InputEndpointMenu::-webkit-scrollbar-thumb:hover,
+        #InputIntegrationMenu::-webkit-scrollbar-thumb:hover,
+        #InputMediaMenu::-webkit-scrollbar-thumb:hover {
+          background: var(--scrollbar-thumb-hover, #6a6a6a);
+        }
+      `;
+      document.head.appendChild(menuScrollbarStyle);
+    }
+
+    const lineHeight = 17 * 1.45;
+    const maxHeight = lineHeight * MAX_LINES + 4;
+
+    function autoResizeTextarea() {
+      textarea.style.height = "auto";
+      textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + "px";
+    }
+
+    function getWheelScrollableContainer(startNode) {
+      if (!(startNode instanceof Element)) {
+        return null;
+      }
+
+      const candidates = [
+        textarea,
+        menuItemsZone,
+        thinkingMenu,
+        endpointMenu,
+        integrationMenu,
+        mediaMenu
+      ];
+
+      for (let i = 0; i < candidates.length; i += 1) {
+        const el = candidates[i];
+
+        if (el && el.contains(startNode)) {
+          return el;
+        }
+      }
+
+      return null;
+    }
+
+    function isContainerScrollable(el) {
+      if (!el) {
+        return false;
+      }
+
+      return el.scrollHeight > el.clientHeight + 1;
+    }
+
+    function captureInputBubbleWheel(e) {
+      const scrollable = getWheelScrollableContainer(e.target);
+
+      if (!scrollable) {
+        e.preventDefault();
+        return;
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (!isContainerScrollable(scrollable)) {
+        return;
+      }
+
+      scrollable.scrollTop += e.deltaY;
+    }
+
+    function handleInputTextareaWheel(e) {
+      const target = e.currentTarget;
+
+      if (!target) {
+        return;
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (target.scrollHeight <= target.clientHeight + 1) {
+        return;
+      }
+
+      target.scrollTop += e.deltaY;
+    }
+
+    textarea.addEventListener("input", autoResizeTextarea);
+
+    textarea.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendBtn.click();
+      }
+    });
+
+    function clearThinking() {
+      host.__features.delete("thinking-low");
+      host.__features.delete("thinking-medium");
+      host.__features.delete("thinking-high");
+    }
+
+    function getThinkingFeature() {
+      if (host.__features.has("thinking-high")) return "thinking-high";
+      if (host.__features.has("thinking-medium")) return "thinking-medium";
+      if (host.__features.has("thinking-low")) return "thinking-low";
+      return null;
+    }
+
+    function setThinking(level) {
+      clearThinking();
+      host.__features.add("thinking-" + level);
+    }
+
+    function clearEndpoint() {
+      host.__features.delete("endpoint-chat-completion");
+      host.__features.delete("endpoint-chat-response");
+      host.__features.delete("endpoint-message");
+      host.__features.delete("endpoint-generate-content");
+      host.__features.delete("endpoint-interactions");
+      host.__features.delete("endpoint-conversation");
+    }
+
+    function getEndpointFeature() {
+      if (host.__features.has("endpoint-chat-completion")) return "endpoint-chat-completion";
+      if (host.__features.has("endpoint-chat-response")) return "endpoint-chat-response";
+      if (host.__features.has("endpoint-message")) return "endpoint-message";
+      if (host.__features.has("endpoint-generate-content")) return "endpoint-generate-content";
+      if (host.__features.has("endpoint-interactions")) return "endpoint-interactions";
+      if (host.__features.has("endpoint-conversation")) return "endpoint-conversation";
+      return null;
+    }
+
+    function setEndpoint(value) {
+      clearEndpoint();
+      host.__features.add("endpoint-" + value);
+    }
+
+    function toggleWebResearch() {
+      if (host.__features.has("web-research"))
+        host.__features.delete("web-research");
+      else
+        host.__features.add("web-research");
+    }
+
+    function toggleKnowledgeSearch() {
+      if (host.__features.has("knowledge-search"))
+        host.__features.delete("knowledge-search");
+      else
+        host.__features.add("knowledge-search");
+    }
+
+    function toggleIntegrationFeature(featureName) {
+      const key = "integration-" + featureName;
+      if (host.__features.has(key))
+        host.__features.delete(key);
+      else
+        host.__features.add(key);
+    }
+
+    function createChip(icon, label, removeFn) {
+
+      const chip = document.createElement("div");
+      chip.className = "input-chip";
+
+      Object.assign(chip.style, {
+        display: "flex",
+        alignItems: "center",
+        gap: "4px",
+        padding: "4px 8px",
+        borderRadius: "14px",
+        background: "var(--input-chip-bg, #3a3a3a)",
+        fontSize: "13px",
+        color: "var(--input-indicator-text, var(--input-chip-text, #ddd))",
+        maxWidth: "100%"
+      });
+
+      const close = document.createElement("span");
+      close.textContent = "✕";
+      close.className = "input-chip-close";
+
+      const ic = document.createElement("span");
+      ic.textContent = icon;
+
+      Object.assign(ic.style, {
+        fontFamily: "Segoe Fluent Icons"
+      });
+
+      const lab = document.createElement("span");
+      lab.textContent = label;
+
+      close.onclick = removeFn;
+
+      chip.appendChild(close);
+      chip.appendChild(ic);
+      chip.appendChild(lab);
+
+      return chip;
+
+    }
+
+    function renderFiles() {
+
+      filesRow.innerHTML = "";
+
+      if (
+        host.__files.length === 0 &&
+        host.__knowledgeFiles.length === 0 &&
+        host.__images.length === 0 &&
+        host.__speechToTextFiles.length === 0 &&
+        host.__integrationFunctions.length === 0 &&
+        host.__integrationMcps.length === 0 &&
+        host.__integrationSkills.length === 0 &&
+        host.__integrationAgents.length === 0 &&
+        host.__customItems.length === 0
+      ) {
+        filesRow.style.display = "none";
+        return;
+      }
+
+      filesRow.style.display = "flex";
+
+      host.__files.forEach((file, i) => {
+        filesRow.appendChild(
+          createChip("\uE16C", file.name, function () {
+            host.__files.splice(i, 1);
+            render();
+          })
+        );
+      });
+
+      host.__knowledgeFiles.forEach((file, i) => {
+        filesRow.appendChild(
+          createChip("\uE11A", file.name, function () {
+            host.__knowledgeFiles.splice(i, 1);
+
+            if (host.__knowledgeFiles.length === 0)
+              host.__features.delete("knowledge-search");
+
+            render();
+          })
+        );
+      });
+
+      host.__images.forEach((file, i) => {
+        filesRow.appendChild(
+          createChip("\uE8B8", file.name, function () {
+            host.__images.splice(i, 1);
+            render();
+          })
+        );
+      });
+
+      host.__speechToTextFiles.forEach((file, i) => {
+        filesRow.appendChild(
+          createChip("\uF47F", file.name, function () {
+            host.__speechToTextFiles.splice(i, 1);
+            render();
+          })
+        );
+      });
+
+      host.__integrationFunctions.forEach((item, i) => {
+        filesRow.appendChild(
+          createChip("\uE1B3", item.name, function () {
+            host.__integrationFunctions.splice(i, 1);
+            render();
+          })
+        );
+      });
+
+      host.__integrationMcps.forEach((item, i) => {
+        filesRow.appendChild(
+          createChip("\uE8CE", item.name, function () {
+            host.__integrationMcps.splice(i, 1);
+            render();
+          })
+        );
+      });
+
+      host.__integrationSkills.forEach((item, i) => {
+        filesRow.appendChild(
+          createChip("\uECA7", item.name, function () {
+            host.__integrationSkills.splice(i, 1);
+            render();
+          })
+        );
+      });
+
+      host.__integrationAgents.forEach((item, i) => {
+        filesRow.appendChild(
+          createChip("\uE99A", item.name, function () {
+            host.__integrationAgents.splice(i, 1);
+            render();
+          })
+        );
+      });
+
+      host.__customItems.forEach((item, i) => {
+        filesRow.appendChild(
+          createChip("\uE15E", item.name, function () {
+            host.__customItems.splice(i, 1);
+            render();
+          })
+        );
+      });
+
+    }
+
+    function renderFeatures() {
+
+      featuresRow.innerHTML = "";
+
+      const thinking = getThinkingFeature();
+      const endpoint = getEndpointFeature();
+      const hasWeb = host.__features.has("web-research");
+      const hasFiles = host.__files.length > 0;
+      const hasImages = host.__images.length > 0;
+      const hasKnowledge = host.__features.has("knowledge-search");
+      const hasDeepResearch = host.__features.has("deep-research");
+
+      const hasIntegrationFunction = host.__features.has("integration-function");
+      const hasIntegrationMcp = host.__features.has("integration-mcp");
+      const hasIntegrationSkills = host.__features.has("integration-skills");
+      const hasIntegrationAgents = host.__features.has("integration-agents");
+      const hasCustom = host.__features.has("custom");
+
+      const hasMediaCreateImage = host.__features.has("media-create-image");
+      const hasMediaCreateVideo = host.__features.has("media-create-video");
+      const hasMediaCreateAudio = host.__features.has("media-create-audio");
+      const hasMediaSpeechToText = host.__speechToTextFiles.length > 0;
+      const hasMediaTextToSpeech = host.__features.has("media-text-to-speech");
+
+      if (!endpoint && !thinking && !hasWeb && !hasFiles && !hasImages && !hasKnowledge && !hasDeepResearch &&
+        !hasIntegrationFunction && !hasIntegrationMcp &&
+        !hasIntegrationSkills && !hasIntegrationAgents &&
+        !hasMediaCreateImage && !hasMediaCreateVideo && !hasMediaCreateAudio &&
+        !hasMediaSpeechToText && !hasMediaTextToSpeech &&
+        !hasCustom) {
+          featuresRow.style.display = "none";
+          return;
+        }
+
+      featuresRow.style.display = "flex";
+
+      if (endpoint) {
+        const title = getEndpointLabel(endpoint);
+
+        featuresRow.appendChild(
+          createChip(
+            "\uE1D2",
+            t("input.chips.endpoint", "Endpoint: {title}", { title: title }),
+            function () {
+              clearEndpoint();
+              render();
+            }
+          )
+        );
+      }
+
+      if (hasWeb) {
+        featuresRow.appendChild(
+          createChip("\uE12B", t("input.chips.webResearch", "Web research"), function () {
+            host.__features.delete("web-research");
+            render();
+          })
+        );
+      }
+
+      if (thinking) {
+        const level = thinking.split("-")[1];
+        const title = getThinkingLabel(level);
+
+        featuresRow.appendChild(
+          createChip(
+            "\uEA91",
+            t("input.chips.thinking", "Thinking: {title}", { title: title }),
+            function () {
+              clearThinking();
+              render();
+            }
+          )
+        );
+      }
+
+      if (hasKnowledge) {
+        featuresRow.appendChild(
+          createChip(
+            "\uE11A",
+            t("input.chips.knowledgeSearch", "Knowledge search ({count})", {
+              count: host.__knowledgeFiles.length
+            }),
+            function () {
+              host.__knowledgeFiles = [];
+              host.__features.delete("knowledge-search");
+              render();
+            }
+          )
+        );
+      }
+
+      if (hasDeepResearch) {
+        featuresRow.appendChild(
+          createChip("\uF6FA", t("input.chips.deepResearch", "Deep Research"), function () {
+            host.__features.delete("deep-research");
+            render();
+          })
+        );
+      }
+
+      if (hasFiles) {
+        featuresRow.appendChild(
+          createChip(
+            "\uE16C",
+            t("input.chips.filesAttached", "Files attached ({count})", {
+              count: host.__files.length
+            }),
+            function () {
+              host.__files = [];
+              render();
+            }
+          )
+        );
+      }
+
+      if (hasImages) {
+        featuresRow.appendChild(
+          createChip(
+            "\uE8B8",
+            t("input.chips.vision", "Vision ({count})", {
+              count: host.__images.length
+            }),
+            function () {
+              host.__images = [];
+              render();
+            }
+          )
+        );
+      }
+
+      if (hasIntegrationFunction) {
+        featuresRow.appendChild(
+          createChip(
+            "\uE1B3",
+            t("input.chips.integrationFunction", "Integration: Function ({count})", {
+              count: host.__integrationFunctions.length
+            }),
+            function () {
+              host.__integrationFunctions = [];
+              host.__features.delete("integration-function");
+              render();
+            }
+          )
+        );
+      }
+
+      if (hasIntegrationMcp) {
+        featuresRow.appendChild(
+          createChip(
+            "\uE8CE",
+            t("input.chips.integrationMcp", "Integration: MCP ({count})", {
+              count: host.__integrationMcps.length
+            }),
+            function () {
+              host.__integrationMcps = [];
+              host.__features.delete("integration-mcp");
+              render();
+            }
+          )
+        );
+      }
+
+      if (hasIntegrationSkills) {
+        featuresRow.appendChild(
+          createChip(
+            "\uECA7",
+            t("input.chips.integrationSkills", "Integration: Skills ({count})", {
+              count: host.__integrationSkills.length
+            }),
+            function () {
+              host.__integrationSkills = [];
+              host.__features.delete("integration-skills");
+              render();
+            }
+          )
+        );
+      }
+
+      if (hasIntegrationAgents) {
+        featuresRow.appendChild(
+          createChip(
+            "\uE99A",
+            t("input.chips.integrationAgents", "Integration: Agents ({count})", {
+              count: host.__integrationAgents.length
+            }),
+            function () {
+              host.__integrationAgents = [];
+              host.__features.delete("integration-agents");
+              render();
+            }
+          )
+        );
+      }
+
+      if (hasMediaCreateImage) {
+        featuresRow.appendChild(
+          createChip("\uEB9F", t("input.chips.mediaCreateImage", "Media: Create Image"), function () {
+            host.__features.delete("media-create-image");
+            render();
+          })
+        );
+      }
+
+      if (hasMediaCreateVideo) {
+        featuresRow.appendChild(
+          createChip("\uE714", t("input.chips.mediaCreateVideo", "Media: Create Video"), function () {
+            host.__features.delete("media-create-video");
+            render();
+          })
+        );
+      }
+
+      if (hasMediaCreateAudio) {
+        featuresRow.appendChild(
+          createChip("\uED1F", t("input.chips.mediaCreateAudio", "Media: Create Audio"), function () {
+            host.__features.delete("media-create-audio");
+            render();
+          })
+        );
+      }
+
+      if (hasMediaSpeechToText) {
+        featuresRow.appendChild(
+          createChip(
+            "\uF47F",
+            t("input.chips.speechToText", "Speech to text ({count})", {
+              count: host.__speechToTextFiles.length
+            }),
+            function () {
+              host.__speechToTextFiles = [];
+              render();
+            }
+          )
+        );
+      }
+
+      if (hasMediaTextToSpeech) {
+        featuresRow.appendChild(
+          createChip("\uF8B2", t("input.chips.mediaTextToSpeech", "Media: Text to speech"), function () {
+            host.__features.delete("media-text-to-speech");
+            render();
+          })
+        );
+      }
+
+      if (hasCustom) {
+        featuresRow.appendChild(
+          createChip(
+            "\uE15E",
+            t("input.chips.custom", "Custom ({count})", {
+              count: host.__customItems.length
+            }),
+            function () {
+              host.__customItems = [];
+              host.__features.delete("custom");
+              render();
+            }
+          )
+        );
+      }
+
+    }
+
+    function render() {
+      if (host.__knowledgeFiles.length > 0)
+        host.__features.add("knowledge-search");
+      else
+        host.__features.delete("knowledge-search");
+
+      if (host.__integrationFunctions.length > 0)
+        host.__features.add("integration-function");
+      else
+        host.__features.delete("integration-function");
+
+      if (host.__integrationMcps.length > 0)
+        host.__features.add("integration-mcp");
+      else
+        host.__features.delete("integration-mcp");
+
+      if (host.__integrationSkills.length > 0)
+        host.__features.add("integration-skills");
+      else
+        host.__features.delete("integration-skills");
+
+      if (host.__integrationAgents.length > 0)
+        host.__features.add("integration-agents");
+      else
+        host.__features.delete("integration-agents");
+
+      if (host.__customItems.length > 0)
+        host.__features.add("custom");
+      else
+        host.__features.delete("custom");
+
+      renderFiles();
+      renderFeatures();
+      updateMenuState();
+      applyInputButtonsVisibility();
+      syncOpenDropdownLayout();
+    }
+
+    host.__refreshUI = render;
+
+    window.onFileSelected = function(fullPath, target) {
+
+      const name = fullPath.split("\\").pop();
+
+      let list;
+
+      if (target === "images") {
+         list = host.__images;
+      } else if (target === "knowledge") {
+         list = host.__knowledgeFiles;
+      } else if (target === "speech") {
+         list = host.__speechToTextFiles;
+      } else {
+         list = host.__files;
+      }
+
+      const exists = list.some(f => f.path === fullPath);
+
+      if (!exists) {
+        list.push({
+          name: name,
+          path: fullPath
+        });
+      }
+
+      render();
+    };
+
+    window.onIntegrationFunctionSelected = function(id, name) {
+      if (!id || !name) return;
+
+      id = String(id);
+      name = String(name);
+
+      const existing = host.__integrationFunctions.find(f => f.id === id);
+
+      if (existing) {
+        existing.name = name;
+      } else {
+        host.__integrationFunctions.push({
+          id: id,
+          name: name
+        });
+      }
+
+      render();
+    }
+
+    window.onIntegrationMcpSelected = function(id, name) {
+      if (!id || !name) return;
+
+      id = String(id);
+      name = String(name);
+
+      const existing = host.__integrationMcps.find(f => f.id === id);
+
+      if (existing) {
+        existing.name = name;
+      } else {
+        host.__integrationMcps.push({
+          id: id,
+          name: name
+        });
+      }
+
+      render();
+    };
+
+    window.onIntegrationSkillSelected = function(id, name) {
+      if (!id || !name) return;
+
+      id = String(id);
+      name = String(name);
+
+      const existing = host.__integrationSkills.find(f => f.id === id);
+
+      if (existing) {
+        existing.name = name;
+      } else {
+        host.__integrationSkills.push({
+          id: id,
+          name: name
+        });
+      }
+
+      render();
+    };
+
+    window.onIntegrationAgentSelected = function(id, name) {
+      if (!id || !name) return;
+
+      id = String(id);
+      name = String(name);
+
+      const existing = host.__integrationAgents.find(f => f.id === id);
+
+      if (existing) {
+        existing.name = name;
+      } else {
+        host.__integrationAgents.push({
+          id: id,
+          name: name
+        });
+      }
+
+      render();
+    };
+
+    window.onCustomSelected = function(id, name) {
+      if (!id || !name) return;
+
+      id = String(id);
+      name = String(name);
+
+      const existing = host.__customItems.find(f => f.id === id);
+
+      if (existing) {
+        existing.name = name;
+      } else {
+        host.__customItems.push({
+          id: id,
+          name: name
+        });
+      }
+
+      render();
+    };
+
+    window.getInputState = function () {
+
+      const features = Array.from(host.__features);
+
+      function extractEndpoint(features) {
+        if (features.includes("endpoint-chat-completion")) return "v1/chat/completion";
+        if (features.includes("endpoint-chat-response")) return "v1/chat/response";
+        if (features.includes("endpoint-message")) return "v1/message";
+        if (features.includes("endpoint-generate-content")) return ":generateContent";
+        if (features.includes("endpoint-interactions")) return "v1/interactions";
+        if (features.includes("endpoint-conversation")) return "v1/conversation";
+        return "none";
+      }
+
+      function extractThinking(features) {
+        if (features.includes("thinking-high")) return "high";
+        if (features.includes("thinking-medium")) return "medium";
+        if (features.includes("thinking-low")) return "low";
+        return "none";
+      }
+
+      function buildDefaultRequestParams() {
+        return {
+          systemPrompt: {
+            systemPrompt: "",
+            enabled: false
+          },
+
+          settings: {
+            temperature: 0.8,
+            maxToken: {
+              maxToken: 2048,
+              enabled: false
+            },
+            stopString: {
+              stopString: [],
+              enabled: false
+            }
+          },
+
+          sampling: {
+            topK: {
+              topK: 20,
+              enabled: false
+            },
+            presencePenalty: {
+              presencePenalty: 0,
+              enabled: false
+            },
+            topP: {
+              topP: 0,
+              enabled: false
+            },
+            seed: {
+              seed: 0,
+              enabled: false
+            }
+          },
+
+          structuredOutput: {
+            jsonSchema: "",
+            enabled: false
+          },
+
+          vendorSettings: {
+            parallelToolCalls: false,
+            backgroundResponse: false,
+            usingPreviousId: false,
+            store: false
+          }
+        };
+      }
+
+      const requestParams =
+        window.RequestParams &&
+        typeof window.RequestParams.getState === "function"
+          ? window.RequestParams.getState()
+          : buildDefaultRequestParams();
+
+      return {
+        text: document.getElementById("InputBubbleText")?.value || "",
+
+        endpoint: extractEndpoint(features),
+
+        thinking: extractThinking(features),
+        deepResearch: features.includes("deep-research"),
+        webSearch: features.includes("web-research"),
+
+        files: host.__files.map(f => ({
+          name: f.name,
+          fullPath: f.path || null
+        })),
+
+        images: host.__images.map(f => ({
+          name: f.name,
+          fullPath: f.path || null
+        })),
+
+        knowledgeSearch: host.__knowledgeFiles.map(f => ({
+          name: f.name,
+          fullPath: f.path || null
+        })),
+
+        integration: {
+          function: host.__integrationFunctions.map(f => ({
+            id: f.id,
+            name: f.name
+          })),
+          mcp: host.__integrationMcps.map(f => ({
+            id: f.id,
+            name: f.name
+          })),
+          agents: host.__integrationAgents.map(f => ({
+            id: f.id,
+            name: f.name
+          }))
+        },
+
+        custom: host.__customItems.map(f => ({
+          id: f.id,
+          name: f.name
+        })),
+
+        media: {
+          createImage: features.includes("media-create-image"),
+          createVideo: features.includes("media-create-video"),
+          createAudio: features.includes("media-create-audio"),
+          speechToText: host.__speechToTextFiles.map(f => ({
+            name: f.name,
+            fullPath: f.path || null
+          })),
+          textToSpeech: features.includes("media-text-to-speech")
+        },
+
+        requestParams: requestParams
+      };
+    };
+
+    window.setInputBubbleText = function (text) {
+      const value = text == null ? "" : String(text);
+
+      textarea.value = value;
+      autoResizeTextarea();
+    };
+
+    window.setInputBubbleFocus = function () {
+      try {
+        textarea.focus({ preventScroll: true });
+      } catch (_) {
+        textarea.focus();
+      }
+
+      const end = textarea.value.length;
+      textarea.setSelectionRange(end, end);
+    };
+
+    window.setInputBubbleWelcome = function (text) {
+      host.__welcomeText = text == null ? "" : String(text);
+      updateWelcomeVisibility();
+    };
+
+    window.setSendButtonState = function (state) {
+      return setSendButtonState(state);
+    };
+
+    window.partialResetInputBubble = function () {
+      textarea.value = "";
+      autoResizeTextarea();
+
+      clearEndpoint();
+
+      host.__files = [];
+      host.__images = [];
+      host.__knowledgeFiles = [];
+      host.__speechToTextFiles = [];
+      host.__customItems = [];
+
+      host.__features.delete("knowledge-search");
+      host.__features.delete("custom");
+      host.__features.delete("media-text-to-speech");
+
+      closeDropdown();
+      render();
+    };
+
+    window.sendInputState = function () {
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage({
+          event: "input-state",
+          state: window.getInputState()
+        });
+      }
+    };
+
+    function addMenuItemHover(btn) {
+      btn.addEventListener("mouseenter", function () {
+        btn.style.background = "var(--input-menu-item-hover-bg, rgba(255,255,255,0.08))";
+        btn.style.color = "var(--input-menu-item-hover-text, #ffffff)";
+      });
+
+      btn.addEventListener("mouseleave", function () {
+        btn.style.background = "transparent";
+        btn.style.color = "var(--input-menu-text, #ddd)";
+      });
+
+      btn.addEventListener("focus", function () {
+        btn.style.background = "var(--input-menu-item-hover-bg, rgba(255,255,255,0.08))";
+        btn.style.color = "var(--input-menu-item-hover-text, #ffffff)";
+      });
+
+      btn.addEventListener("blur", function () {
+        btn.style.background = "transparent";
+        btn.style.color = "var(--input-menu-text, #ddd)";
+      });
+    }
+
+
+    function createMenuItem(label, icon, onclick, hasSubmenu = false) {
+
+      const btn = document.createElement("button");
+
+      btn.type = "button";
+      btn.dataset.label = label;
+
+      Object.assign(btn.style, {
+        position: "relative",
+        display: "block",
+        width: "100%",
+        textAlign: "left",
+        background: "transparent",
+        border: "none",
+        color: "var(--input-menu-text, #ddd)",
+        padding: "6px 22px 6px 6px", // espace à droite pour le chevron
+        cursor: "pointer",
+        borderRadius: "8px",
+        transition: "background 140ms ease, color 140ms ease",
+      });
+
+      btn.onclick = onclick;
+
+      const iconSpan = document.createElement("span");
+      iconSpan.className = "input-menu-item-icon";
+      iconSpan.textContent = icon;
+
+      Object.assign(iconSpan.style, {
+        fontFamily: "Segoe Fluent Icons",
+        marginRight: "6px",
+        width: "16px",
+        display: "inline-block",
+        textAlign: "center"
+      });
+
+      const labelSpan = document.createElement("span");
+      labelSpan.className = "input-menu-item-label";
+      labelSpan.textContent = label;
+
+      btn.appendChild(iconSpan);
+      btn.appendChild(labelSpan);
+
+
+      if (hasSubmenu) {
+        const chevron = document.createElement("span");
+
+        chevron.textContent = "›";
+
+        Object.assign(chevron.style, {
+          position: "absolute",
+          right: "8px",          // collé au bord droit du menu
+          top: "50%",
+          transform: "translateY(-50%)",
+          pointerEvents: "none",
+          opacity: "0.7",
+          fontSize: "14px"
+        });
+
+        btn.appendChild(chevron);
+
+      }
+
+      addMenuItemHover(btn);
+      return btn;
+    }
+
+    const SUBMENU_OVERLAP = 5;
+    const SUBMENU_VIEWPORT_MARGIN = 8;
+    const MENU_VIEWPORT_MARGIN = 12;
+    const SUBMENU_VERTICAL_OFFSET = 3;
+    const SUBMENU_EXTRA_HEIGHT = 20;
+
+    let activeSubmenuButton = null;
+    let activeSubmenuPanel = null;
+
+    function getVerticalPadding(node) {
+      const style = window.getComputedStyle(node);
+      return (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+    }
+
+    function getVerticalPaddingDetail(node) {
+      const style = window.getComputedStyle(node);
+
+      return {
+        top: parseFloat(style.paddingTop) || 0,
+        bottom: parseFloat(style.paddingBottom) || 0
+      };
+    }
+
+    function getVerticalBorders(node) {
+      const style = window.getComputedStyle(node);
+      return (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+    }
+
+    function getVerticalMargins(node) {
+      const style = window.getComputedStyle(node);
+      return (parseFloat(style.marginTop) || 0) + (parseFloat(style.marginBottom) || 0);
+    }
+
+    function measureOuterHeight(node) {
+      if (!node) return 0;
+      return node.getBoundingClientRect().height + getVerticalMargins(node);
+    }
+
+    function getVisibleMenuButtons(container) {
+      return Array.from(container.children).filter(function (el) {
+        return el.tagName === "BUTTON" && el.style.display !== "none";
+      });
+    }
+
+    function sumButtonsHeight(buttons) {
+      return buttons.reduce(function (sum, btn) {
+        return sum + Math.ceil(btn.getBoundingClientRect().height);
+      }, 0);
+    }
+
+    function getMenuButtonHeight(buttons) {
+      if (!buttons.length) return 0;
+      return Math.ceil(buttons[0].getBoundingClientRect().height);
+    }
+
+    function getSnappedVisibleHeight(totalHeight, availableHeight, itemHeight) {
+      if (availableHeight <= 0) return 0;
+
+      if (itemHeight <= 0 || totalHeight <= availableHeight) {
+        return Math.min(totalHeight, availableHeight);
+      }
+
+      const visibleCount = Math.floor(availableHeight / itemHeight);
+
+      if (visibleCount >= 1) {
+        return Math.min(totalHeight, visibleCount * itemHeight);
+      }
+
+      return availableHeight;
+    }
+
+    function applyScrollableMenuHeight(container, availableHeight, reservedHeight) {
+      const buttons = getVisibleMenuButtons(container);
+      const totalButtonsHeight = sumButtonsHeight(buttons);
+      const itemHeight = getMenuButtonHeight(buttons);
+      const safeReservedHeight = Math.max(0, Math.ceil(reservedHeight || 0));
+      const availableForButtons = Math.max(0, Math.floor(availableHeight - safeReservedHeight));
+      const visibleButtonsHeight = getSnappedVisibleHeight(
+        totalButtonsHeight,
+        availableForButtons,
+        itemHeight
+      );
+
+      container.style.maxHeight = visibleButtonsHeight + "px";
+      container.style.overflowY =
+        totalButtonsHeight > visibleButtonsHeight + 1 ? "auto" : "hidden";
+
+      return {
+        totalButtonsHeight: totalButtonsHeight,
+        visibleButtonsHeight: visibleButtonsHeight
+      };
+    }
+
+    function getDropdownAvailableHeight() {
+      const shellRect = shell.getBoundingClientRect();
+      return Math.max(0, Math.floor(shellRect.top - MENU_VIEWPORT_MARGIN));
+    }
+
+    function applyDropdownScrollableLayout() {
+      if (dropdown.hidden) return;
+
+      const availableHeight = getDropdownAvailableHeight();
+      const dropdownPadding = getVerticalPadding(dropdown);
+      const iconsHeight =
+        menuIconsZone.style.display === "none" ? 0 : measureOuterHeight(menuIconsZone);
+
+      dropdown.style.maxHeight = availableHeight + "px";
+      dropdown.style.overflow = "visible";
+
+      applyScrollableMenuHeight(
+        menuItemsZone,
+        availableHeight,
+        dropdownPadding + iconsHeight
+      );
+    }
+
+    function applySubmenuScrollableLayout(submenu) {
+      if (!submenu || submenu.hidden) return;
+
+      const availableHeight = Math.max(
+        0,
+        window.innerHeight - (SUBMENU_VIEWPORT_MARGIN * 2)
+      );
+
+      const submenuPadding = getVerticalPaddingDetail(submenu);
+      const submenuBorders = getVerticalBorders(submenu);
+
+      submenu.style.overflowX = "hidden";
+
+      const reservedHeight =
+        submenuPadding.top +
+        submenuPadding.bottom +
+        submenuBorders;
+
+      const layout = applyScrollableMenuHeight(
+        submenu,
+        availableHeight,
+        reservedHeight
+      );
+
+      const visibleOuterHeight = Math.min(
+        availableHeight,
+        layout.visibleButtonsHeight +
+          submenuPadding.top +
+          submenuPadding.bottom +
+          submenuBorders +
+          SUBMENU_EXTRA_HEIGHT
+      );
+
+      submenu.style.maxHeight = visibleOuterHeight + "px";
+
+      const hasVerticalScroll =
+        layout.totalButtonsHeight > layout.visibleButtonsHeight + 1;
+
+      submenu.style.overflowY = hasVerticalScroll ? "auto" : "hidden";
+    }
+
+    function measureSubmenu(submenu) {
+      const wasHidden = submenu.hidden;
+      const prevVisibility = submenu.style.visibility;
+      const prevPointerEvents = submenu.style.pointerEvents;
+      const prevOpacity = submenu.style.opacity;
+      const prevTransform = submenu.style.transform;
+      const prevTransition = submenu.style.transition;
+
+      if (wasHidden) {
+        submenu.hidden = false;
+      }
+
+      submenu.style.visibility = "hidden";
+      submenu.style.pointerEvents = "none";
+      submenu.style.opacity = "1";
+      submenu.style.transform = "none";
+      submenu.style.transition = "none";
+
+      const rect = submenu.getBoundingClientRect();
+
+      if (wasHidden) {
+        submenu.hidden = true;
+      }
+
+      submenu.style.visibility = prevVisibility;
+      submenu.style.pointerEvents = prevPointerEvents;
+      submenu.style.opacity = prevOpacity;
+      submenu.style.transform = prevTransform;
+      submenu.style.transition = prevTransition;
+
+      return rect;
+    }
+
+    function positionSubmenu(triggerBtn, submenu) {
+      const dropdownRect = dropdown.getBoundingClientRect();
+      const triggerRect = triggerBtn.getBoundingClientRect();
+      const submenuRect = measureSubmenu(submenu);
+
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+
+      const minTopViewport = SUBMENU_VIEWPORT_MARGIN;
+      const maxTopViewport = Math.max(
+        minTopViewport,
+        viewportHeight - SUBMENU_VIEWPORT_MARGIN - submenuRect.height
+      );
+
+      const desiredTopViewport = triggerRect.top - SUBMENU_VERTICAL_OFFSET;
+
+      const topViewport = Math.min(
+        Math.max(desiredTopViewport, minTopViewport),
+        maxTopViewport
+      );
+
+      // Ouverture à droite avec recouvrement de 5 px
+      const outsideLeftViewport = dropdownRect.right - SUBMENU_OVERLAP;
+
+      // Repli à l'intérieur si pas assez de place à droite
+      const insideLeftViewport = Math.max(
+        dropdownRect.left,
+        dropdownRect.right - submenuRect.width
+      );
+
+      const canOpenOutside =
+        outsideLeftViewport + submenuRect.width <=
+        viewportWidth - SUBMENU_VIEWPORT_MARGIN;
+
+      const leftViewport = canOpenOutside
+        ? outsideLeftViewport
+        : insideLeftViewport;
+
+      submenu.style.left = (leftViewport - dropdownRect.left) + "px";
+      submenu.style.top = (topViewport - dropdownRect.top) + "px";
+      submenu.style.marginLeft = "0";
+      submenu.style.transform = "none";
+    }
+
+    function animateSubmenuOpen(submenu) {
+      submenu.style.transition = "none";
+      submenu.style.opacity = "0";
+      submenu.style.transform = "translateY(2px) scale(0.985)";
+
+      submenu.getBoundingClientRect();
+
+      submenu.style.transition = "opacity 140ms ease, transform 140ms ease";
+      submenu.style.opacity = "1";
+      submenu.style.transform = "none";
+    }
+
+    function openSubmenu(triggerBtn, submenu) {
+      if (activeSubmenuPanel === submenu && !submenu.hidden) {
+        return;
+      }
+
+      closeAllSubmenus();
+
+      submenu.hidden = false;
+      applySubmenuScrollableLayout(submenu);
+      positionSubmenu(triggerBtn, submenu);
+      animateSubmenuOpen(submenu);
+
+      activeSubmenuButton = triggerBtn;
+      activeSubmenuPanel = submenu;
+    }
+
+    function toggleSubmenu(triggerBtn, submenu) {
+      const wasHidden = submenu.hidden;
+
+      if (!wasHidden) {
+        closeAllSubmenus();
+        return;
+      }
+
+      openSubmenu(triggerBtn, submenu);
+    }
+
+    function bindSubmenuHover(triggerBtn, submenu) {
+      triggerBtn.addEventListener("mouseenter", function () {
+        if (dropdown.hidden) return;
+        openSubmenu(triggerBtn, submenu);
+      });
+    }
+
+    function bindSimpleItemHover(btn) {
+      btn.addEventListener("mouseenter", function () {
+        if (dropdown.hidden) return;
+        closeAllSubmenus();
+      });
+    }
+
+    menuIconsZone.addEventListener("mouseenter", function () {
+      if (dropdown.hidden) return;
+      closeAllSubmenus();
+    });
+
+    endpointBtn = createMenuItem("Endpoint", "\uE1D2", function (e) {
+      e.stopPropagation();
+      if (!host.__enabledFunctions.endpoint) return;
+
+      toggleSubmenu(endpointBtn, endpointMenu);
+    }, true);
+
+    const webResearchBtn = createMenuItem("Web research", "\uE12B", function (e) {
+      e.stopPropagation();
+      if (!host.__enabledFunctions.webResearch) return;
+      toggleWebResearch();
+      render();
+    });
+
+    const thinkingBtn = createMenuItem("Thinking", "\uEA91", function (e) {
+      e.stopPropagation();
+      if (!host.__enabledFunctions.thinking) return;
+
+      toggleSubmenu(thinkingBtn, thinkingMenu);
+    }, true);
+
+    const fileBtn = createMenuItem("Attach files", "\uE16C", function (e) {
+      e.stopPropagation();
+      if (!host.__enabledFunctions.chatFiles) return;
+      /*fileInput.click();*/
+      window.chrome.webview.postMessage({
+       event: "open-file-dialog",
+       target: "documents"
+      });
+    });
+
+    const knowledgeBtn = createMenuItem("Knowledge search", "\uE11A", function (e) {
+      e.stopPropagation();
+      if (!host.__enabledFunctions.knowledgeSearch) return;
+      /*knowledgeInput.click();*/
+      window.chrome.webview.postMessage({
+       event: "open-file-dialog",
+       target: "knowledge"
+      });
+    });
+
+    const visionBtn = createMenuItem("Vision", "\uE8B8", function (e) {
+      e.stopPropagation();
+      if (!host.__enabledFunctions.vision) return;
+      /*imageInput.click();*/
+      window.chrome.webview.postMessage({
+       event: "open-file-dialog",
+       target: "images"
+      });
+    });
+
+    const deepResearchBtn = createMenuItem("Deep Research", "\uF6FA", function (e) {
+      e.stopPropagation();
+      if (!host.__enabledFunctions.deepResearch) return;
+
+      if (host.__features.has("deep-research"))
+        host.__features.delete("deep-research");
+      else
+        host.__features.add("deep-research");
+      render();
+    });
+
+    const integrationBtn = createMenuItem("Integration", "\uEB3C", function (e) {
+      e.stopPropagation();
+      if (!host.__enabledFunctions.integration) return;
+
+      toggleSubmenu(integrationBtn, integrationMenu);
+    }, true);
+
+    const mediaBtn = createMenuItem("Media", "\uF8A6", function (e) {
+      e.stopPropagation();
+      if (!host.__enabledFunctions.media) return;
+
+      toggleSubmenu(mediaBtn, mediaMenu);
+    }, true);
+
+    customBtn = createMenuItem("Custom", "\uE15E", function (e) {
+      e.stopPropagation();
+      if (!host.__enabledFunctions.custom) return;
+
+      window.chrome.webview.postMessage({
+        event: "open-custom-dialog",
+        target: "custom"
+      });
+    });
+
+    systemPromptBtn = document.createElement("button");
+    systemPromptBtn.id = "InputSystemPromptButton";
+    systemPromptBtn.type = "button";
+    systemPromptBtn.title = "";
+
+    styleButton(systemPromptBtn);
+    addHover(systemPromptBtn);
+
+    systemPromptBtn.style.display = "flex";
+    systemPromptBtn.style.alignItems = "center";
+    systemPromptBtn.style.justifyContent = "center";
+    systemPromptBtn.style.gap = "6px";
+
+    // IMPORTANT : casser le bouton carré imposé par styleButton
+    systemPromptBtn.style.width = "auto";
+    systemPromptBtn.style.minWidth = "0";
+    systemPromptBtn.style.padding = "6px 12px";
+
+    systemPromptBtn.style.transform = "none";
+
+    systemPromptBtn.style.height = "32px";
+    systemPromptBtn.style.borderRadius = "16px";
+    systemPromptBtn.style.whiteSpace = "nowrap";
+
+    // icône
+    const systemPromptIcon = document.createElement("span");
+    systemPromptIcon.textContent = "\uE115";
+    systemPromptIcon.style.fontFamily = "Segoe Fluent Icons";
+    systemPromptIcon.style.fontSize = "14px";   // taille réduite
+    systemPromptIcon.style.lineHeight = "1";
+
+    // texte
+    const systemPromptLabel = document.createElement("span");
+    systemPromptLabel.textContent = "settings";
+    systemPromptLabel.style.fontFamily = "Segoe UI, sans-serif";
+    systemPromptLabel.style.fontSize = "13px";
+
+    // assemblage
+    systemPromptBtn.appendChild(systemPromptIcon);
+    systemPromptBtn.appendChild(systemPromptLabel);
+
+    systemPromptBtn.onclick = function (e) {
+      e.stopPropagation();
+
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage({
+          event: "system-settings"
+        });
+      }
+    };
+
+    modelBtn = document.createElement("button");
+    modelBtn.id = "InputModelButton";
+    modelBtn.type = "button";
+    modelBtn.title = "";
+
+    styleButton(modelBtn);
+    addHover(modelBtn);
+
+    modelBtn.style.display = "flex";
+    modelBtn.style.alignItems = "center";
+    modelBtn.style.justifyContent = "center";
+    modelBtn.style.gap = "6px";
+
+    // IMPORTANT : casser le bouton carré imposé par styleButton
+    modelBtn.style.width = "auto";
+    modelBtn.style.minWidth = "0";
+    modelBtn.style.padding = "6px 12px";
+
+    modelBtn.style.transform = "none";
+
+    modelBtn.style.height = "32px";
+    modelBtn.style.borderRadius = "16px";
+    modelBtn.style.whiteSpace = "nowrap";
+
+    // icône
+    const modelIcon = document.createElement("span");
+    modelIcon.textContent = "\uE7BE";
+    modelIcon.style.fontFamily = "Segoe Fluent Icons";
+    modelIcon.style.fontSize = "22px";
+    modelIcon.style.lineHeight = "1";
+
+    // texte
+    const modelLabel = document.createElement("span");
+    modelLabel.textContent = "model";
+    modelLabel.style.fontFamily = "Segoe UI, sans-serif";
+    modelLabel.style.fontSize = "13px";
+
+    // assemblage
+    modelBtn.appendChild(modelIcon);
+    modelBtn.appendChild(modelLabel);
+
+    modelBtn.onclick = function (e) {
+      e.stopPropagation();
+
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage({
+          event: "model-selection"
+        });
+      }
+    };
+
+    bindSubmenuHover(endpointBtn, endpointMenu);
+    bindSubmenuHover(thinkingBtn, thinkingMenu);
+    bindSubmenuHover(integrationBtn, integrationMenu);
+    bindSubmenuHover(mediaBtn, mediaMenu);
+
+    bindSimpleItemHover(webResearchBtn);
+    bindSimpleItemHover(fileBtn);
+    bindSimpleItemHover(knowledgeBtn);
+    bindSimpleItemHover(visionBtn);
+    bindSimpleItemHover(deepResearchBtn);
+    bindSimpleItemHover(customBtn);
+
+    function closeAllSubmenus() {
+      [endpointMenu, thinkingMenu, integrationMenu, mediaMenu].forEach(function (menu) {
+        menu.hidden = true;
+        menu.style.opacity = "0";
+        menu.style.transform = "translateY(2px) scale(0.985)";
+      });
+
+      activeSubmenuButton = null;
+      activeSubmenuPanel = null;
+    }
+
+    function syncDropdownWidth() {
+      const shellRect = shell.getBoundingClientRect();
+      const width = Math.round(shellRect.width);
+
+      dropdown.style.width = width + "px";
+      dropdown.style.minWidth = width + "px";
+      dropdown.style.maxWidth = width + "px";
+    }
+
+    function syncOpenDropdownLayout() {
+      if (dropdown.hidden) return;
+
+      syncDropdownWidth();
+      applyDropdownScrollableLayout();
+
+      if (
+        activeSubmenuButton &&
+        activeSubmenuPanel &&
+        !activeSubmenuPanel.hidden
+      ) {
+        applySubmenuScrollableLayout(activeSubmenuPanel);
+        positionSubmenu(activeSubmenuButton, activeSubmenuPanel);
+      }
+    }
+
+    function animateDropdownOpen() {
+      dropdown.style.transition = "none";
+      dropdown.style.opacity = "0";
+      dropdown.style.transform = "translateY(calc(-100% + 6px)) scale(0.985)";
+
+      dropdown.getBoundingClientRect();
+
+      dropdown.style.transition = "opacity 180ms ease, transform 180ms ease";
+      dropdown.style.opacity = "1";
+      dropdown.style.transform = "translateY(-100%) scale(1)";
+    }
+
+    function openDropdown() {
+      syncDropdownWidth();
+      dropdown.hidden = false;
+      applyDropdownScrollableLayout();
+      animateDropdownOpen();
+    }
+
+    function closeDropdown() {
+      dropdown.hidden = true;
+      dropdown.style.opacity = "0";
+      dropdown.style.transform = "translateY(calc(-100% + 6px)) scale(0.985)";
+      closeAllSubmenus();
+    }
+
+    window.closeInputMainMenu = function () {
+      closeDropdown();
+    };
+
+    window.openInputMainMenu = function () {
+      if (dropdown.hidden) openDropdown();
+    };
+
+    menuItemsZone.appendChild(endpointBtn);
+    menuItemsZone.appendChild(webResearchBtn);
+    menuItemsZone.appendChild(thinkingBtn);
+    menuItemsZone.appendChild(fileBtn);
+    menuItemsZone.appendChild(knowledgeBtn);
+    menuItemsZone.appendChild(visionBtn);
+    menuItemsZone.appendChild(deepResearchBtn);
+    menuItemsZone.appendChild(integrationBtn);
+    menuItemsZone.appendChild(mediaBtn);
+    menuItemsZone.appendChild(customBtn);
+
+    menuIconsZone.appendChild(systemPromptBtn);
+    menuIconsZone.appendChild(modelBtn);
+
+    dropdown.appendChild(menuItemsZone);
+    dropdown.appendChild(menuIconsZone);
+
+    dropdown.appendChild(endpointMenu);
+    dropdown.appendChild(thinkingMenu);
+    dropdown.appendChild(integrationMenu);
+    dropdown.appendChild(mediaMenu);
+
+    integrationFunctionBtn = createMenuItem("Function","\uE1B3",function(e){
+      e.stopPropagation();
+      if (!host.__enabledFunctions.integrationFunction) return;
+
+      window.chrome.webview.postMessage({
+        event: "open-integration-function-dialog",
+        target: "integration-function"
+      });
+
+      integrationMenu.hidden = true;
+    });
+
+    integrationMcpBtn = createMenuItem("MCP","\uE8CE",function(e){
+      e.stopPropagation();
+      if (!host.__enabledFunctions.integrationMcp) return;
+
+      window.chrome.webview.postMessage({
+        event: "open-integration-mcp-dialog",
+        target: "integration-mcp"
+      });
+
+      integrationMenu.hidden = true;
+    });
+
+    integrationSkillsBtn = createMenuItem("Skills","\uECA7",function(e){
+      e.stopPropagation();
+      if (!host.__enabledFunctions.integrationSkills) return;
+
+      window.chrome.webview.postMessage({
+        event: "open-integration-skills-dialog",
+        target: "integration-skills"
+      });
+
+      integrationMenu.hidden = true;
+    });
+
+    integrationAgentsBtn = createMenuItem("Agents","\uE99A",function(e){
+      e.stopPropagation();
+      if (!host.__enabledFunctions.integrationAgents) return;
+
+      window.chrome.webview.postMessage({
+        event: "open-integration-agents-dialog",
+        target: "integration-agents"
+      });
+
+      integrationMenu.hidden = true;
+    });
+
+    function toggleMediaFeature(featureName) {
+      const key = "media-" + featureName;
+
+      if (host.__features.has(key))
+        host.__features.delete(key);
+      else
+        host.__features.add(key);
+    }
+
+    mediaCreateImageBtn = createMenuItem("Create Image", "\uEB9F", function(e){
+      e.stopPropagation();
+      toggleMediaFeature("create-image");
+      mediaMenu.hidden = true;
+      render();
+    });
+
+    mediaCreateVideoBtn = createMenuItem("Create Video", "\uE714", function(e){
+      e.stopPropagation();
+      toggleMediaFeature("create-video");
+      mediaMenu.hidden = true;
+      render();
+    });
+
+    mediaCreateAudioBtn = createMenuItem("Create Audio", "\uED1F", function(e){
+      e.stopPropagation();
+      toggleMediaFeature("create-audio");
+      mediaMenu.hidden = true;
+      render();
+    });
+
+    mediaSpeechToTextBtn = createMenuItem("Speech to text", "\uF47F", function(e){
+      e.stopPropagation();
+
+      window.chrome.webview.postMessage({
+      event: "open-file-dialog",
+      target: "speech"
+  });
+
+  mediaMenu.hidden = true;
+    });
+
+    mediaTextToSpeechBtn = createMenuItem("Text to speech", "\uF8B2", function(e){
+      e.stopPropagation();
+      toggleMediaFeature("text-to-speech");
+      mediaMenu.hidden = true;
+      render();
+    });
+
+    integrationFunctionBtn.style.paddingLeft = "10px";
+    integrationMcpBtn.style.paddingLeft = "10px";
+    integrationSkillsBtn.style.paddingLeft = "10px";
+    integrationAgentsBtn.style.paddingLeft = "10px";
+
+    mediaCreateImageBtn.style.paddingLeft = "10px";
+    mediaCreateVideoBtn.style.paddingLeft = "10px";
+    mediaCreateAudioBtn.style.paddingLeft = "10px";
+    mediaSpeechToTextBtn.style.paddingLeft = "10px";
+    mediaTextToSpeechBtn.style.paddingLeft = "10px";
+
+    integrationMenu.appendChild(integrationFunctionBtn);
+    integrationMenu.appendChild(integrationMcpBtn);
+    integrationMenu.appendChild(integrationSkillsBtn);
+    integrationMenu.appendChild(integrationAgentsBtn);
+
+    mediaMenu.appendChild(mediaCreateImageBtn);
+    mediaMenu.appendChild(mediaCreateVideoBtn);
+    mediaMenu.appendChild(mediaCreateAudioBtn);
+    mediaMenu.appendChild(mediaSpeechToTextBtn);
+    mediaMenu.appendChild(mediaTextToSpeechBtn);
+
+    endpointChatCompletionBtn = createMenuItem("v1/chat/completion", "", function (e) {
+      e.stopPropagation();
+      setEndpoint("chat-completion");
+      endpointMenu.hidden = true;
+      render();
+    });
+    endpointChatCompletionBtn.title = "OpenAI, DeepSeek, MistralAI";
+    endpointChatCompletionBtn.style.paddingLeft = "10px";
+
+    endpointChatResponseBtn = createMenuItem("v1/chat/response", "", function (e) {
+      e.stopPropagation();
+      setEndpoint("chat-response");
+      endpointMenu.hidden = true;
+      render();
+    });
+    endpointChatResponseBtn.title = "OpenAI";
+    endpointChatResponseBtn.style.paddingLeft = "10px";
+
+    endpointMessageBtn = createMenuItem("v1/message", "", function (e) {
+      e.stopPropagation();
+      setEndpoint("message");
+      endpointMenu.hidden = true;
+      render();
+    });
+    endpointMessageBtn.title = "Claude";
+    endpointMessageBtn.style.paddingLeft = "10px";
+
+    endpointGenerateContentBtn = createMenuItem(":generateContent", "", function (e) {
+      e.stopPropagation();
+      setEndpoint("generate-content");
+      endpointMenu.hidden = true;
+      render();
+    });
+    endpointGenerateContentBtn.title = "Gemini";
+    endpointGenerateContentBtn.style.paddingLeft = "10px";
+
+    endpointInteractionsBtn = createMenuItem("v1/interactions", "", function (e) {
+      e.stopPropagation();
+      setEndpoint("interactions");
+      endpointMenu.hidden = true;
+      render();
+    });
+    endpointInteractionsBtn.title = "Gemini";
+    endpointInteractionsBtn.style.paddingLeft = "10px";
+
+    endpointConversationBtn = createMenuItem("v1/conversation", "", function (e) {
+      e.stopPropagation();
+      setEndpoint("conversation");
+      endpointMenu.hidden = true;
+      render();
+    });
+    endpointConversationBtn.title = "MistralAI";
+    endpointConversationBtn.style.paddingLeft = "10px";
+
+    endpointMenu.appendChild(endpointChatCompletionBtn);
+    endpointMenu.appendChild(endpointChatResponseBtn);
+    endpointMenu.appendChild(endpointMessageBtn);
+    endpointMenu.appendChild(endpointGenerateContentBtn);
+    endpointMenu.appendChild(endpointInteractionsBtn);
+    endpointMenu.appendChild(endpointConversationBtn);
+
+    [
+      { key: "thinkingLow", level: "low" },
+      { key: "thinkingMedium", level: "medium" },
+      { key: "thinkingHigh", level: "high" }
+    ].forEach(function (cfg) {
+
+      const btn = createMenuItem(
+        cfg.level.charAt(0).toUpperCase() + cfg.level.slice(1),
+        "",
+        function (e) {
+          e.stopPropagation();
+          setThinking(cfg.level);
+          thinkingMenu.hidden = true;
+          render();
+        }
+      );
+
+      btn.style.paddingLeft = "10px";
+
+      btn.style.display = host.__enabledFunctions[cfg.key] ? "" : "none";
+
+      thinkingMenu.appendChild(btn);
+    });
+
+
+    function updateMenuState() {
+      endpointBtn.style.display = host.__enabledFunctions.endpoint ? "" : "none";
+      endpointChatCompletionBtn.style.display = host.__enabledFunctions.endpointChatCompletion ? "" : "none";
+      endpointChatResponseBtn.style.display = host.__enabledFunctions.endpointChatResponse ? "" : "none";
+      endpointMessageBtn.style.display = host.__enabledFunctions.endpointMessage ? "" : "none";
+      endpointGenerateContentBtn.style.display = host.__enabledFunctions.endpointGenerateContent ? "" : "none";
+      endpointInteractionsBtn.style.display = host.__enabledFunctions.endpointInteractions ? "" : "none";
+      endpointConversationBtn.style.display = host.__enabledFunctions.endpointConversation ? "" : "none";
+      webResearchBtn.style.display = host.__enabledFunctions.webResearch ? "" : "none";
+      thinkingBtn.style.display = host.__enabledFunctions.thinking ? "" : "none";
+      fileBtn.style.display = host.__enabledFunctions.chatFiles ? "" : "none";
+      knowledgeBtn.style.display = host.__enabledFunctions.knowledgeSearch ? "" : "none";
+      visionBtn.style.display = host.__enabledFunctions.vision ? "" : "none";
+      deepResearchBtn.style.display = host.__enabledFunctions.deepResearch ? "" : "none";
+      integrationBtn.style.display = host.__enabledFunctions.integration ? "" : "none";
+      mediaBtn.style.display = host.__enabledFunctions.media ? "" : "none";
+      customBtn.style.display = host.__enabledFunctions.custom ? "" : "none";
+
+      integrationFunctionBtn.style.display = host.__enabledFunctions.integrationFunction ? "" : "none";
+      integrationMcpBtn.style.display = host.__enabledFunctions.integrationMcp ? "" : "none";
+      integrationSkillsBtn.style.display = host.__enabledFunctions.integrationSkills ? "" : "none";
+      integrationAgentsBtn.style.display = host.__enabledFunctions.integrationAgents ? "" : "none";
+
+      mediaCreateImageBtn.style.display = host.__enabledFunctions.mediaCreateImage ? "" : "none";
+      mediaCreateVideoBtn.style.display = host.__enabledFunctions.mediaCreateVideo ? "" : "none";
+      mediaCreateAudioBtn.style.display = host.__enabledFunctions.mediaCreateAudio ? "" : "none";
+      mediaSpeechToTextBtn.style.display = host.__enabledFunctions.mediaSpeechToText ? "" : "none";
+      mediaTextToSpeechBtn.style.display = host.__enabledFunctions.mediaTextToSpeech ? "" : "none";
+
+      thinkingMenu.querySelectorAll("button")[0].style.display = host.__enabledFunctions.thinkingLow ? "" : "none";
+      thinkingMenu.querySelectorAll("button")[1].style.display = host.__enabledFunctions.thinkingMedium ? "" : "none";
+      thinkingMenu.querySelectorAll("button")[2].style.display = host.__enabledFunctions.thinkingHigh ? "" : "none";
+
+      systemPromptBtn.style.display = host.__enabledFunctions.systemPrompt ? "flex" : "none";
+      modelBtn.style.display = host.__enabledFunctions.model ? "flex" : "none";
+
+      menuIconsZone.style.display =
+        (host.__enabledFunctions.systemPrompt || host.__enabledFunctions.model)
+          ? "flex"
+          : "none";
+    }
+
+    function applyCapabilities(msg) {
+      if (!msg || msg.type !== "setCapabilities")
+        return;
+
+      const hasOwn = function (key) {
+        return Object.prototype.hasOwnProperty.call(msg, key);
+      };
+
+      [
+        ["endpoint", "endpoint"],
+        ["endpointChatCompletion", "endpointChatCompletion"],
+        ["endpointChatResponse", "endpointChatResponse"],
+        ["endpointMessage", "endpointMessage"],
+        ["endpointGenerateContent", "endpointGenerateContent"],
+        ["endpointInteractions", "endpointInteractions"],
+        ["endpointConversation", "endpointConversation"],
+        ["webResearch", "webSearch"],
+        ["thinking", "thinking"],
+        ["thinkingLow", "thinkingLow"],
+        ["thinkingMedium", "thinkingMedium"],
+        ["thinkingHigh", "thinkingHigh"],
+        ["chatFiles", "files"],
+        ["knowledgeSearch", "knowledgeSearch"],
+        ["vision", "vision"],
+        ["deepResearch", "deepResearch"],
+        ["integration", "integration"],
+        ["integrationFunction", "integrationFunction"],
+        ["integrationMcp", "integrationMcp"],
+        ["integrationSkills", "integrationSkills"],
+        ["integrationAgents", "integrationAgents"],
+        ["media", "media"],
+        ["mediaCreateImage", "mediaCreateImage"],
+        ["mediaCreateVideo", "mediaCreateVideo"],
+        ["mediaCreateAudio", "mediaCreateAudio"],
+        ["mediaSpeechToText", "mediaSpeechToText"],
+        ["mediaTextToSpeech", "mediaTextToSpeech"],
+        ["custom", "custom"],
+        ["systemPrompt", "systemPrompt"],
+        ["model", "model"]
+      ].forEach(function (pair) {
+        const targetKey = pair[0];
+        const sourceKey = pair[1];
+
+        if (hasOwn(sourceKey)) {
+          host.__enabledFunctions[targetKey] = !!msg[sourceKey];
+        }
+      });
+
+      if (
+        (hasOwn("endpoint") && !host.__enabledFunctions.endpoint) ||
+        (hasOwn("endpointChatCompletion") && !host.__enabledFunctions.endpointChatCompletion && host.__features.has("endpoint-chat-completion")) ||
+        (hasOwn("endpointChatResponse") && !host.__enabledFunctions.endpointChatResponse && host.__features.has("endpoint-chat-response")) ||
+        (hasOwn("endpointMessage") && !host.__enabledFunctions.endpointMessage && host.__features.has("endpoint-message")) ||
+        (hasOwn("endpointGenerateContent") && !host.__enabledFunctions.endpointGenerateContent && host.__features.has("endpoint-generate-content")) ||
+        (hasOwn("endpointInteractions") && !host.__enabledFunctions.endpointInteractions && host.__features.has("endpoint-interactions")) ||
+        (hasOwn("endpointConversation") && !host.__enabledFunctions.endpointConversation && host.__features.has("endpoint-conversation"))
+      ) {
+        clearEndpoint();
+      }
+
+      if (
+        (hasOwn("thinking") && !host.__enabledFunctions.thinking) ||
+        (hasOwn("thinkingLow") && !host.__enabledFunctions.thinkingLow && host.__features.has("thinking-low")) ||
+        (hasOwn("thinkingMedium") && !host.__enabledFunctions.thinkingMedium && host.__features.has("thinking-medium")) ||
+        (hasOwn("thinkingHigh") && !host.__enabledFunctions.thinkingHigh && host.__features.has("thinking-high"))
+      ) {
+        clearThinking();
+      }
+
+      if (hasOwn("webSearch") && !host.__enabledFunctions.webResearch) {
+        host.__features.delete("web-research");
+      }
+
+      if (hasOwn("files") && !host.__enabledFunctions.chatFiles) {
+        host.__files = [];
+      }
+
+      if (hasOwn("knowledgeSearch") && !host.__enabledFunctions.knowledgeSearch) {
+        host.__features.delete("knowledge-search");
+        host.__knowledgeFiles = [];
+      }
+
+      if (hasOwn("vision") && !host.__enabledFunctions.vision) {
+        host.__images = [];
+      }
+
+      if (hasOwn("deepResearch") && !host.__enabledFunctions.deepResearch) {
+        host.__features.delete("deep-research");
+      }
+
+      if (hasOwn("integration") && !host.__enabledFunctions.integration) {
+        host.__features.delete("integration-function");
+        host.__features.delete("integration-mcp");
+        host.__features.delete("integration-skills");
+        host.__features.delete("integration-agents");
+        host.__integrationFunctions = [];
+        host.__integrationMcps = [];
+        host.__integrationSkills = [];
+        host.__integrationAgents = [];
+      }
+
+      if (hasOwn("integrationFunction") && !host.__enabledFunctions.integrationFunction) {
+        host.__features.delete("integration-function");
+        host.__integrationFunctions = [];
+      }
+
+      if (hasOwn("integrationMcp") && !host.__enabledFunctions.integrationMcp) {
+        host.__features.delete("integration-mcp");
+        host.__integrationMcps = [];
+      }
+
+      if (hasOwn("integrationSkills") && !host.__enabledFunctions.integrationSkills) {
+        host.__features.delete("integration-skills");
+        host.__integrationSkills = [];
+      }
+
+      if (hasOwn("integrationAgents") && !host.__enabledFunctions.integrationAgents) {
+        host.__features.delete("integration-agents");
+        host.__integrationAgents = [];
+      }
+
+      if (hasOwn("media") && !host.__enabledFunctions.media) {
+        host.__features.delete("media-create-image");
+        host.__features.delete("media-create-video");
+        host.__features.delete("media-create-audio");
+        host.__features.delete("media-text-to-speech");
+        host.__speechToTextFiles = [];
+      }
+
+      if (hasOwn("mediaCreateImage") && !host.__enabledFunctions.mediaCreateImage) {
+        host.__features.delete("media-create-image");
+      }
+
+      if (hasOwn("mediaCreateVideo") && !host.__enabledFunctions.mediaCreateVideo) {
+        host.__features.delete("media-create-video");
+      }
+
+      if (hasOwn("mediaCreateAudio") && !host.__enabledFunctions.mediaCreateAudio) {
+        host.__features.delete("media-create-audio");
+      }
+
+      if (hasOwn("mediaSpeechToText") && !host.__enabledFunctions.mediaSpeechToText) {
+        host.__speechToTextFiles = [];
+      }
+
+      if (hasOwn("mediaTextToSpeech") && !host.__enabledFunctions.mediaTextToSpeech) {
+        host.__features.delete("media-text-to-speech");
+      }
+
+      if (hasOwn("custom") && !host.__enabledFunctions.custom) {
+        host.__features.delete("custom");
+        host.__customItems = [];
+      }
+
+      closeDropdown();
+      render();
+    }
+
+    host.__applyCapabilities = applyCapabilities;
+
+    function applyInputButtonsVisibility() {
+      const showFunction = host.__uiState.showFunctionButton;
+      const showAudio = host.__uiState.showAudioButton;
+
+      menuBtn.style.display = showFunction ? "" : "none";
+      audioBtn.style.display = showAudio ? "" : "none";
+
+      if (showFunction && showAudio) {
+        row.style.gridTemplateColumns = "48px 1fr 18px 44px 44px";
+        textarea.style.gridColumn = "2 / 3";
+        menuBtn.style.gridColumn = "1";
+        audioBtn.style.gridColumn = "4";
+        sendBtn.style.gridColumn = "5";
+        return;
+      }
+
+      if (!showFunction && showAudio) {
+        row.style.gridTemplateColumns = "1fr 18px 44px 44px";
+        textarea.style.gridColumn = "1 / 2";
+        audioBtn.style.gridColumn = "3";
+        sendBtn.style.gridColumn = "4";
+        return;
+      }
+
+      if (showFunction && !showAudio) {
+        row.style.gridTemplateColumns = "48px 1fr 18px 44px";
+        textarea.style.gridColumn = "2 / 3";
+        menuBtn.style.gridColumn = "1";
+        sendBtn.style.gridColumn = "4";
+        return;
+      }
+
+      row.style.gridTemplateColumns = "1fr 18px 44px";
+      textarea.style.gridColumn = "1 / 2";
+      sendBtn.style.gridColumn = "3";
+    }
+
+    fileInput.addEventListener("change", function () {
+      const files = Array.from(fileInput.files);
+
+      console.log("ATTACH FILE INPUT TRIGGERED");
+
+      const isSame = (a, b) =>
+        a.name === b.name &&
+        a.size === b.size &&
+        a.lastModified === b.lastModified;
+
+      files.forEach(f => {
+        if (!host.__files.some(existing => isSame(existing, f))) {
+          host.__files.push(f);
+        }
+      });
+
+      fileInput.value = "";
+
+      render();
+    });
+
+    knowledgeInput.addEventListener("change", function () {
+      const files = Array.from(knowledgeInput.files);
+
+      const isSame = (a, b) =>
+        a.name === b.name &&
+        a.size === b.size &&
+        a.lastModified === b.lastModified;
+
+      files.forEach(f => {
+        if (!host.__knowledgeFiles.some(existing => isSame(existing, f))) {
+          host.__knowledgeFiles.push(f);
+        }
+      });
+
+      knowledgeInput.value = "";
+
+      if (host.__knowledgeFiles.length > 0)
+        host.__features.add("knowledge-search");
+
+      render();
+    });
+
+    imageInput.addEventListener("change", function () {
+      const files = Array.from(imageInput.files);
+
+      const isSame = (a, b) =>
+        a.name === b.name &&
+        a.size === b.size &&
+        a.lastModified === b.lastModified;
+
+      files.forEach(f => {
+        if (!host.__images.some(existing => isSame(existing, f))) {
+          host.__images.push(f);
+        }
+      });
+
+      imageInput.value = "";
+      render();
+    });
+
+    menuBtn.onclick = function (e) {
+      e.stopPropagation();
+
+      if (dropdown.hidden) {
+        openDropdown();
+      } else {
+        closeDropdown();
+      }
+    };
+
+    document.addEventListener("click", function (e) {
+      if (!dropdown.contains(e.target) && e.target !== menuBtn) {
+        closeDropdown();
+      }
+    });
+
+    window.addEventListener("resize", function () {
+      syncOpenDropdownLayout();
+    });
+
+    function buildOutgoingFeatures() {
+
+      const features = Array.from(host.__features);
+
+      if (host.__files.length > 0)
+        features.push("attach-file");
+
+      if (host.__images.length > 0)
+        features.push("vision");
+
+      return features;
+
+    }
+
+    sendBtn.onclick = function () {
+      if (!window.chrome || !window.chrome.webview)
+        return;
+
+      if (host.__sendButtonState === SEND_BUTTON_STOP_MODE) {
+        window.chrome.webview.postMessage({
+          event: "stop-submit"
+        });
+        return;
+      }
+
+      const text = textarea.value.trim();
+      if (!text) return;
+
+      window.chrome.webview.postMessage({
+        event: "input-submit",
+        text: text,
+        features: buildOutgoingFeatures(),
+        files: host.__files,
+        images: host.__images,
+        knowledgeFiles: host.__knowledgeFiles,
+        integrationFunctions: host.__integrationFunctions.map(f => ({
+          id: f.id,
+          name: f.name
+        })),
+        integrationMcps: host.__integrationMcps.map(f => ({
+          id: f.id,
+          name: f.name
+        })),
+        integrationSkills: host.__integrationSkills.map(f => ({
+          id: f.id,
+          name: f.name
+        })),
+        integrationAgents: host.__integrationAgents.map(f => ({
+          id: f.id,
+          name: f.name
+        })),
+        customItems: host.__customItems.map(f => ({
+          id: f.id,
+          name: f.name
+        })),
+        audioMode: false
+      });
+    };
+
+    audioBtn.onclick = function () {
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage({ event: "audio-input" });
+      }
+    };
+
+    row.appendChild(menuBtn);
+    menuBtn.style.gridColumn = "1";
+    menuBtn.style.gridRow = "2";
+
+    row.appendChild(textarea);
+
+    row.appendChild(audioBtn);
+    audioBtn.style.gridColumn = "4";
+    audioBtn.style.gridRow = "2";
+
+    row.appendChild(sendBtn);
+    sendBtn.style.gridColumn = "5";
+    sendBtn.style.gridRow = "2";
+
+    shell.appendChild(filesRow);
+    shell.appendChild(row);
+    shell.appendChild(featuresRow);
+    shell.appendChild(dropdown);
+
+    host.appendChild(welcome);
+    host.appendChild(shell);
+
+    shell.addEventListener("wheel", captureInputBubbleWheel, {
+      passive: false,
+      capture: true
+    });
+
+    textarea.addEventListener("wheel", handleInputTextareaWheel, {
+      passive: false
+    });
+
+    const shellResizeObserver = new ResizeObserver(function () {
+      syncOpenDropdownLayout();
+    });
+
+    shellResizeObserver.observe(shell);
+
+    function hasConversation() {
+
+      const root = document.getElementById(RESPONSE_HOST_ID);
+      if (!root) return false;
+
+      const children = Array.from(root.children)
+        .filter(function (el) {
+          return !(el.id === "loadingBubble" && root.children.length === 1);
+        });
+
+      return children.length > 0;
+
+    }
+
+    function getResponseLayoutMetrics() {
+      const root = document.getElementById(RESPONSE_HOST_ID);
+
+      if (!root) {
+        return {
+          centerX: Math.round(window.innerWidth / 2),
+          width: Math.max(320, Math.min(760, window.innerWidth - 32))
+        };
+      }
+
+      const rect = root.getBoundingClientRect();
+
+      if (!rect || rect.width <= 0) {
+        return {
+          centerX: Math.round(window.innerWidth / 2),
+          width: Math.max(320, Math.min(760, window.innerWidth - 32))
+        };
+      }
+
+      return {
+        centerX: Math.round(rect.left + (rect.width / 2)),
+        width: Math.max(320, Math.min(760, Math.floor(rect.width)))
+      };
+    }
+
+    function applyHorizontalLayout() {
+      const metrics = getResponseLayoutMetrics();
+
+      host.style.left = metrics.centerX + "px";
+      host.style.width = metrics.width + "px";
+
+      syncOpenDropdownLayout();
+    }
+
+    function startHorizontalSyncBurst() {
+      horizontalSyncUntil = performance.now() + 260;
+
+      if (horizontalSyncActive) {
+        return;
+      }
+
+      horizontalSyncActive = true;
+      host.style.transition = INPUT_HOST_SYNC_TRANSITION;
+
+      function tick() {
+        if (window.updateInputBubbleLayout) {
+          window.updateInputBubbleLayout();
+        }
+
+        if (performance.now() < horizontalSyncUntil) {
+          horizontalSyncFrameId = requestAnimationFrame(tick);
+          return;
+        }
+
+        horizontalSyncActive = false;
+        horizontalSyncFrameId = 0;
+        host.style.transition = INPUT_HOST_BASE_TRANSITION;
+
+        if (window.updateInputBubbleLayout) {
+          window.updateInputBubbleLayout();
+        }
+      }
+
+      horizontalSyncFrameId = requestAnimationFrame(tick);
+    }
+
+    function setCenteredMode() {
+      applyHorizontalLayout();
+      host.style.top = "50%";
+      host.style.bottom = "auto";
+      host.style.transform = "translate(-50%, -50%)";
+      updateWelcomeVisibility(true);
+    }
+
+    function setBottomMode() {
+      applyHorizontalLayout();
+      host.style.top = "auto";
+      host.style.bottom = "24px";
+      host.style.transform = "translateX(-50%)";
+      updateWelcomeVisibility(false);
+    }
+
+    window.updateInputBubbleLayout = function () {
+      if (hasConversation())
+        setBottomMode();
+      else
+        setCenteredMode();
+    };
+
+    const observer = new MutationObserver(function () {
+      window.updateInputBubbleLayout && window.updateInputBubbleLayout();
+    });
+
+    const responseRoot = document.getElementById(RESPONSE_HOST_ID);
+
+    if (responseRoot)
+      observer.observe(responseRoot, { childList: true, subtree: false });
+
+    window.addEventListener("resize", function () {
+      startHorizontalSyncBurst();
+    }, { passive: true });
+
+    window.addEventListener(INPUT_BUBBLE_I18N_EVENT, function () {
+      applyInputBubbleDictionary();
+      render();
+    });
+
+    applyInputBubbleDictionary();
+    autoResizeTextarea();
+    applySendButtonStateUI();
+    render();
+    window.updateInputBubbleLayout && window.updateInputBubbleLayout();
+
+  }
+
+  window.resetInputBubble = function () {
+
+    const host = document.getElementById("InputHost");
+    if (!host) return;
+
+    const textarea = document.getElementById("InputBubbleText");
+
+    if (textarea) {
+      textarea.value = "";
+      textarea.style.height = "auto";
+    }
+
+    host.__features.clear();
+    host.__files = [];
+    host.__images = [];
+    host.__knowledgeFiles = [];
+    host.__speechToTextFiles = [];
+    host.__integrationFunctions = [];
+    host.__integrationMcps = [];
+    host.__integrationSkills = [];
+    host.__integrationAgents = [];
+    host.__customItems = [];
+
+    if (host.__refreshUI)
+      host.__refreshUI();
+  };
+
+  window.chrome.webview.addEventListener("message", function (event) {
+
+    const msg = event.data;
+    if (!msg) return;
+
+    if (msg.type === "setInputButtonsVisibility") {
+
+      const host = document.getElementById("InputHost");
+      if (!host) return;
+
+      const state = host.__uiState;
+      if (!state) return;
+
+      if (Object.prototype.hasOwnProperty.call(msg, "function")) {
+        state.showFunctionButton = !!msg.function;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(msg, "audio")) {
+        state.showAudioButton = !!msg.audio;
+      }
+
+      if (host.__refreshUI)
+        host.__refreshUI();
+
+      return;
+    }
+
+    if (msg.type === "sendbtn-state") {
+      let nextState = null;
+
+      if (msg.state === "input" || msg.state === "input-mode")
+        nextState = "input-mode";
+      else if (msg.state === "stop" || msg.state === "stop-mode")
+        nextState = "stop-mode";
+
+      if (nextState && window.setSendButtonState)
+        window.setSendButtonState(nextState);
+
+      return;
+    }
+
+    if (msg.type === "resetInput")
+      window.resetInputBubble();
+
+    if (msg.type === "setInputText") {
+      window.setInputBubbleText(msg.text);
+      return;
+    }
+
+    if (msg.type === "input-bubble-setfocus") {
+      if (window.setInputBubbleFocus)
+        window.setInputBubbleFocus();
+
+      return;
+    }
+
+    if (msg.type === "setInputWelcome") {
+      window.setInputBubbleWelcome(msg.text);
+      return;
+    }
+
+    if (msg.type === "setCapabilities") {
+      const host = document.getElementById("InputHost");
+      if (!host || typeof host.__applyCapabilities !== "function")
+        return;
+
+      host.__applyCapabilities(msg);
+      return;
+    }
+
+  });
+
+  ensureInputBubble();
+
+  window.chrome.webview.postMessage("input-ready");
+
+})();
