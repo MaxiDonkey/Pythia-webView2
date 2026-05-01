@@ -1,0 +1,43 @@
+﻿{
+  "type": "model-selector-set-data",
+  "models": [
+    {
+      "id": "ID1",
+      "label": "One of text generation model   <- to define",
+      "capabilityLabels": ["Thinking", "Vision"],
+      "categoryId": "textGeneration"
+    },
+    {
+      "id": "ID2",
+      "label": "One of image creation model   <- to define",
+      "capabilityLabels": ["Create Image"],
+      "categoryId": "imageCreation"
+    },
+    {
+      "id": "ID3",
+      "label": "One of video creation model   <- to define",
+      "capabilityLabels": ["Create Video"],
+      "categoryId": "videoCreation"
+    },
+    {
+      "id": "ID4",
+      "label": "One of audio creation model   <- to define",
+      "capabilityLabels": ["Create Audio", "Text to speech"],
+      "categoryId": "audioCreation"
+    },
+    {
+      "id": "ID5",
+      "label": "One of text to speech model   <- to define",
+      "capabilityLabels": ["Text to speech"],
+      "categoryId": "textToSpeech"
+    },
+    {
+      "id": "ID6",
+      "label": "One of deep research model   <- to define",
+      "capabilityLabels": ["Deep Research"],
+      "categoryId": "deepResearch"
+    }
+  ],
+  "activeCategoryId": "allModels",
+  "selectedModelId": ""
+}
