@@ -1,0 +1,79 @@
+{
+  "type": "card-selection-dialog-set-data",
+  "dialog": "mcp",
+  "cards": [
+    {
+      "id": "1EC2521C-9E0A-410B-8DD4-0D6997F9AFFF",
+      "name": "Get weather",
+      "commentaire": "Récupère les données de la météo",
+      "content": ""
+    },
+    {
+      "id": "10B03BB4-B9D6-4D94-B181-1094434FEE9F",
+      "name": "Math thorèmes en analyse",
+      "commentaire": "Ajoute les théorème (analyse fonctionnelle) et espaces de Banach",
+      "badge": "\uE186",
+      "content": ""
+    },
+    {
+      "id": "D2312FF8-41FB-4B2C-8E53-AB0B33F50867",
+      "name": "Horraires des TGV est",
+      "commentaire": "Récupère les horraires des TGV de la ligne est",
+      "badge": "\uE181",
+      "content": ""
+    },
+    {
+      "id": "28A2924D-4A66-4A9A-9061-61590A54C69D",
+      "name": "Beat generation",
+      "commentaire": "Ajoute textes de Kerouac, Ginsbergs et Burroughs",
+      "content": ""
+    },
+    {
+      "id": "CC1B71B0-53EB-4C90-BAEA-D9548B18A09A",
+      "name": "Get bourse",
+      "commentaire": "Récupère les données du CAC40",
+      "content": ""
+    },
+    {
+      "id": "03CCDE97-65AE-446C-98FF-B82ADC10C615",
+      "name": "Géomètrie algébrique",
+      "commentaire": "Règles pour gérer les complexes de Cech",
+      "badge": "\uE1D3",
+      "content": ""
+    },
+    {
+      "id": "DE5FE16B-F37F-47E2-A22F-55E45AE09E10",
+      "name": "Get time",
+      "commentaire": "Récupère l'heure locale",
+      "badge": "\uE2AD",
+      "content": ""
+    },
+    {
+      "id": "5AD83920-262F-417D-AD51-AF0D21960896",
+      "name": "Géomètrie diffférentielle",
+      "commentaire": "Ajoute le comportement des algèbres compleses semi-simples",
+      "content": ""
+    },
+    {
+      "id": "736A7E0B-D241-48CF-B69F-FDEAE6BCBAB8",
+      "name": "Géomètrie algébrique",
+      "commentaire": "Règles pour gérer les complexes de Cech",
+      "badge": "\uE1D3",
+      "content": ""
+    },
+    {
+      "id": "2468C33B-AED0-452B-B3E4-6A76FC3132A6",
+      "name": "Get time",
+      "commentaire": "Récupère l'heure locale",
+      "badge": "\uE2AD",
+      "content": ""
+    },
+    {
+      "id": "87D889E6-64B6-4A74-9720-1EAC518279DB",
+      "name": "Géomètrie diffférentielle",
+      "commentaire": "Ajoute le comportement des algèbres compleses semi-simples",
+      "content": ""
+    }
+  ],
+  "selectedId": "10B03BB4-B9D6-4D94-B181-1094434FEE9F"
+}

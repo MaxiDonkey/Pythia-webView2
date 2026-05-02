@@ -1,0 +1,20 @@
+{
+  "type": "card-selection-dialog-set-data",
+  "dialog": "custom",
+  "cards": [
+    {
+      "id": "4FE14234-AEFB-4659-9553-5551C00D4237",
+      "name": "Func 1",
+      "commentaire": "lancer une macro customisée",
+      "content": ""
+    },
+    {
+      "id": "13D92562-C2C9-432F-AF45-516630274B14",
+      "name": "my custom func 2",
+      "commentaire": "lancer une macro customosée",
+      "badge": "",
+      "content": ""
+    }
+  ],
+  "selectedId": ""
+}
