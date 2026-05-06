@@ -112,6 +112,16 @@ type
     class function Parse(const S: string): TCachingType; static;
   end;
 
+  TThinkingDisplay = (
+    summarized,
+    omitted
+  );
+
+  TThinkingDisplayHelper = record Helper for TThinkingDisplay
+    function ToString: string;
+    class function Parse(const S: string): TThinkingDisplay; static;
+  end;
+
 {$ENDREGION}
 
 {$REGION 'Anthropic.Batches'}
@@ -928,6 +938,18 @@ end;
 function TSpeedTypeHelper.ToString: string;
 begin
   Result := TEnumWire.ToString<TSpeedType>(Self);
+end;
+
+{ TThinkingDisplayHelper }
+
+class function TThinkingDisplayHelper.Parse(const S: string): TThinkingDisplay;
+begin
+  Result := TEnumWire.Parse<TThinkingDisplay>(S);
+end;
+
+function TThinkingDisplayHelper.ToString: string;
+begin
+  Result := TEnumWire.ToString<TThinkingDisplay>(Self);
 end;
 
 end.

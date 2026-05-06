@@ -294,16 +294,16 @@ begin
           Result.OnCancellation :=
             procedure (Sender: TObject)
             begin
-              var Error := 'aborted';
+              var Cancel := 'aborted';
 
               if Assigned(Callbacks) and Assigned(Callbacks.OnCancellation) then
                 begin
                   var CallbackError := Callbacks.OnCancellation(Sender);
                   if not CallbackError.IsEmpty then
-                    Error := CallbackError;
+                    Cancel := CallbackError;
                 end;
 
-              Reject(Exception.Create(Error));
+              Reject(Exception.Create(Cancel));
             end;
         end,
         StreamEvents);

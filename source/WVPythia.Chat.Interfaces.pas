@@ -1,4 +1,4 @@
-unit WVPythia.Chat.Interfaces;
+﻿unit WVPythia.Chat.Interfaces;
 
 interface
 
@@ -46,6 +46,73 @@ type
     function Execute(const Res: TCommandResult): TCommandExecResult;
   end;
 
+  {--- Result of a single file upload attempt, surfaced to the host through
+       TUploadCompleteProc when an IFileUploadService implementation finishes
+       processing a file. The record is the only piece of upload state that
+       crosses the service boundary; the local path is preserved as the
+       correlation key. }
+  TUploadResult = record
+    LocalPath: string;
+    Success: Boolean;
+    FileId: string;
+    ErrorMessage: string;
+    class function Ok(const ALocalPath, AFileId: string): TUploadResult; static;
+    class function Fail(const ALocalPath, AErrorMessage: string): TUploadResult; static;
+  end;
+
+  TUploadCompleteProc = TProc<TUploadResult>;
+
+  {--- Optional vendor-provided service used by Pythia when the host wants to
+       transfer selected files asynchronously to a remote storage / Files API
+       and reference them later by an opaque file id (rather than inlining
+       them as document blocks).
+
+       Lifecycle contract:
+       • ShouldHandle is called synchronously on the UI thread for every
+         file selected through the open dialog. The implementation decides
+         per-file whether it wants to take ownership of the upload.
+       • SubmitForUpload returns immediately. The actual transfer runs
+         asynchronously. AOnComplete is invoked exactly once, on the UI
+         thread, when this specific file is Ready or Failed. AOnComplete
+         may be nil when the host only relies on TryGetFileId at submit time.
+       • CancelOrDelete is called when the user removes an attachment from
+         the compose box, or when the host wants to evict a previously
+         uploaded file. Implementations must tolerate calls for unknown
+         paths.
+       • TryGetFileId is queried at submit time, just before the chat
+         payload is built. It must not block.
+       • PendingCount + OnPendingChanged are exposed so the host UI can
+         disable the send button while at least one upload is still in
+         flight. OnPendingChanged is invoked on the UI thread whenever
+         PendingCount transitions to or from zero, at minimum.
+
+       Implementations are responsible for thread-marshaling, concurrency
+       control (rate limit, parallel cap) and persistence of file ids for
+       later cleanup. Pythia core is intentionally agnostic of those
+       concerns. }
+  IFileUploadService = interface
+    ['{7D4A2C8E-9F31-4E5B-B3A7-1C0E6D2F5A48}']
+    function ShouldHandle(const ALocalPath: string;
+                          const ATarget: TOpenFileTarget): Boolean;
+
+    procedure SubmitForUpload(
+      const ALocalPath: string;
+      const ATarget: TOpenFileTarget;
+      const AOnComplete: TUploadCompleteProc = nil);
+
+    procedure CancelOrDelete(const ALocalPath: string);
+
+    function TryGetFileId(const ALocalPath: string;
+                          out AFileId: string): Boolean;
+
+    function PendingCount: Integer;
+
+    function GetOnPendingChanged: TProc;
+    procedure SetOnPendingChanged(const Value: TProc);
+    property OnPendingChanged: TProc
+      read GetOnPendingChanged write SetOnPendingChanged;
+  end;
+
   IPythiaBrowser = interface
     ['{B6D390AF-CEFB-436A-9560-6BACCC390F25}']
 
@@ -76,6 +143,8 @@ type
     procedure SetCommandLine(const Value: ICommandRegistry);
     function GetApiKeyNamesAsJsonString: string;
     procedure SetApiKeyNamesAsJsonString(const Value: string);
+    function GetFileUploadService: IFileUploadService;
+    procedure SetFileUploadService(const Value: IFileUploadService);
 
     //accessible uniquement avec via l'interface
     function ExecuteScript(const Script: string): Boolean;
@@ -137,6 +206,7 @@ type
     function CardSettingsButtonVisible(const Value: Boolean): Boolean;
     function TryGetCardFileContent(const AType: string; ParamProc: TFunc<string, Boolean>): Boolean;
 
+    procedure ScrollToAfterEnd(SizeAfter: Integer; Smooth: Boolean = True); overload;
     procedure ScrollToAfterEnd(Smooth: Boolean = True); overload;
     procedure ScrollToEnd(Smooth: Boolean = False);
     procedure ScrollToTop(Smooth: Boolean = false);
@@ -170,6 +240,28 @@ type
 
     procedure ChatSessionAutoRename(const ID: string; const Content: string);
     procedure ApiKeyValuesUpdate(const KeyName: string);
+
+    {--- Pushes the upload status of a file (identified by its local path,
+         already present in the compose box) to the JS layer so the bubble
+         can carry the file_id and reflect a visual indicator.
+
+         IMPORTANT — convention de pré-échappement : l'implémentation côté
+         host se contente d'injecter chaque paramètre via Format dans le
+         template JS. L'appelant doit donc fournir des littéraux JS prêts à
+         l'emploi (chaîne entre guillemets et échappée, ou 'null'). Les
+         constantes FILE_UPLOAD_STATUS_UPLOADING / READY / FAILED de
+         WVPythia.Chat.Consts sont déjà au bon format pour AStatus. }
+    function SetFileUploadStatus(
+      const APath: string;
+      const AStatus: string;
+      const AFileId: string = '';
+      const AErrorMessage: string = ''): Boolean;
+
+    {--- Toggles the orthogonal availability flag of the send button (i.e.
+         whether the button is clickable, independently of its input/stop
+         visual mode). Used by the upload pipeline to lock submit while at
+         least one transfer is still in flight. }
+    function SetSendButtonAvailability(const AEnabled: Boolean): Boolean;
 
     // Methods exposed by the object
     procedure Clear;
@@ -241,6 +333,11 @@ type
     property ApiKeySecretStore: ISecretStore read GetApiKeySecretStore write SetApiKeySecretStore;
     property CommandLine: ICommandRegistry read GetCommandLine write SetCommandLine;
     property ApiKeyNamesAsJsonString: string read GetApiKeyNamesAsJsonString write SetApiKeyNamesAsJsonString;
+    {--- Optional vendor-provided service called when a file is selected through
+         the open dialog. Set it from the host bootstrap to enable remote file
+         transfer (Files API and similar). When unset, files keep flowing through
+         the existing inline pipeline unchanged. }
+    property FileUploadService: IFileUploadService read GetFileUploadService write SetFileUploadService;
   end;
 
 implementation
@@ -255,6 +352,26 @@ class function TCommandExecResult.Fail(const AMessage: string): TCommandExecResu
 begin
   Result.Success := False;
   Result.Message := AMessage;
+end;
+
+{ TUploadResult }
+
+class function TUploadResult.Ok(
+  const ALocalPath, AFileId: string): TUploadResult;
+begin
+  Result.LocalPath := ALocalPath;
+  Result.Success := True;
+  Result.FileId := AFileId;
+  Result.ErrorMessage := '';
+end;
+
+class function TUploadResult.Fail(
+  const ALocalPath, AErrorMessage: string): TUploadResult;
+begin
+  Result.LocalPath := ALocalPath;
+  Result.Success := False;
+  Result.FileId := '';
+  Result.ErrorMessage := AErrorMessage;
 end;
 
 end.

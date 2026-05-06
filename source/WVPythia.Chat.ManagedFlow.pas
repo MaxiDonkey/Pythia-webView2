@@ -181,9 +181,11 @@ type
   private
     FName: string;
     FFullPath: string;
+    FFileId: string;
   public
     property Name: string read FName write FName;
     property FullPath: string read FFullPath write FFullPath;
+    property FileId: string read FFileId write FFileId;
   end;
 
   TIntegration = class
@@ -294,10 +296,10 @@ type
     function Error(const AValue: Boolean): TManagedItemLLMResult;
     function ErrorMessage(const AValue: string): TManagedItemLLMResult;
 
-    function Files(const AValues: TArray<string>): TManagedItemLLMResult;
-    function Images(const AValues: TArray<string>): TManagedItemLLMResult;
-    function Audios(const AValues: TArray<string>): TManagedItemLLMResult;
-    function Videos(const AValues: TArray<string>): TManagedItemLLMResult;
+    function FileResults(const AValues: TArray<string>): TManagedItemLLMResult;
+    function ImageResults(const AValues: TArray<string>): TManagedItemLLMResult;
+    function AudioResults(const AValues: TArray<string>): TManagedItemLLMResult;
+    function VideoResults(const AValues: TArray<string>): TManagedItemLLMResult;
 
     function IsEmpty: Boolean;
     procedure Clear;
@@ -371,7 +373,7 @@ begin
   Result := Self;
 end;
 
-function TManagedItemLLMResult.Files(
+function TManagedItemLLMResult.FileResults(
   const AValues: TArray<string>): TManagedItemLLMResult;
 begin
   FFiles := Normalize(AValues);
@@ -383,7 +385,7 @@ begin
   Result := FError;
 end;
 
-function TManagedItemLLMResult.Images(
+function TManagedItemLLMResult.ImageResults(
   const AValues: TArray<string>): TManagedItemLLMResult;
 begin
   FImages := Normalize(AValues);
@@ -395,14 +397,14 @@ begin
   Result := FErrorMessage;
 end;
 
-function TManagedItemLLMResult.Audios(
+function TManagedItemLLMResult.AudioResults(
   const AValues: TArray<string>): TManagedItemLLMResult;
 begin
   FAudios := Normalize(AValues);
   Result := Self;
 end;
 
-function TManagedItemLLMResult.Videos(
+function TManagedItemLLMResult.VideoResults(
   const AValues: TArray<string>): TManagedItemLLMResult;
 begin
   FVideos := Normalize(AValues);

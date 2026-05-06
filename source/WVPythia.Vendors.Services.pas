@@ -3,7 +3,8 @@ unit WVPythia.Vendors.Services;
 interface
 
 uses
-  System.SysUtils, WVPythia.Chat.ManagedFlow, WVPythia.Strs;
+  System.SysUtils,
+  WVPythia.Chat.ManagedFlow, WVPythia.Strs;
 
 type
   IVendorServices = interface
@@ -12,6 +13,7 @@ type
       const AState: TInputPromptState;
       const AOnFinalize: TManagedItemFinalizeProc);
     procedure UpdateApiKey;
+
   end;
 
   TOptionalParam<T> = record
@@ -80,6 +82,7 @@ type
   public
     Name: string;
     FullPath: string;
+    FileId: string;
 
     class function FromClass(const AValue: TMediaItem): TMediaItemData; static;
     class function FromArray(const AValues: TArray<TMediaItem>): TArray<TMediaItemData>; static;
@@ -136,6 +139,7 @@ type
 
   TStateBuffer = record
   public
+    Source: string;
     TextBuffer: string;
     ThinkingBuffer: string;
     JsonRequest: string;
@@ -160,6 +164,15 @@ type
     Media: TMediaData;
     Models: TModelsData;
     CoreParamsState: TCoreParamsData;
+
+    //Results
+    ImageToDownload: Boolean;  //not with Anthropic
+    AudioToDownload: Boolean;  //not with Anthropic
+    VideoToDownload: Boolean;  //not with Anthropic
+    FileResults: TArray<string>;
+    ImageResults: TArray<string>;
+    AudioResults: TArray<string>;
+    VideoResults: TArray<string>;
 
     procedure AddStreamedText(const Value: string);
     procedure AddStreamedThinking(const Value: string);
@@ -325,6 +338,7 @@ begin
 
   Result.Name := AValue.Name;
   Result.FullPath := AValue.FullPath;
+  Result.FileId := AValue.FileId;
 end;
 
 class function TMediaItemData.FromArray(
@@ -445,6 +459,7 @@ begin
   Result.Error := False;
   Result.ErrorMessage := '';
 
+  Result.Source := AState.Source;
   Result.Text := AState.Text;
   Result.Endpoint := AState.Endpoint;
   Result.Thinking := AState.Thinking;

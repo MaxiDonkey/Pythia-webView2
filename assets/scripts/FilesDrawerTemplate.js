@@ -16,6 +16,8 @@
   const CHAT_ITEM_RENAME_ICON = "\uE70F";
   const CHAT_ITEM_DELETE_ICON = "\uE74D";
 
+  const CHAT_ITEM_CLICK_TO_HOST_DELAY_MS = 220;
+
   const CLOSED_WIDTH = 64;
   const RAIL_WIDTH = 64;
   const DOCK_BUTTON_SIZE = 48;
@@ -50,6 +52,7 @@
     },
     openItemMenu: null,
     renameSession: null,
+    pendingChatSelectionTimer: null,
     focusedItemId: ""
   };
 
@@ -418,7 +421,7 @@
       .delphi-dock-list-row {
         position: relative;
         display: block;
-        margin: 0 10px 2px 8px;
+        margin: 0 10px 2px 2px;
         /*min-height: 50px;*/
         min-height: 25px;
       }
@@ -428,7 +431,8 @@
         -webkit-appearance: none;
         width: 100%;
         /*padding: 12px 52px 12px 16px;*/
-        padding: 8px 52px 8px 16px;
+        /*padding: 8px 52px 8px 16px;*/
+        padding: 7px 32px 7px 16px;
         margin: 0;
         border: none;
         border-radius: 10px;
@@ -865,6 +869,24 @@
       id: item && item.Id ? String(item.Id) : "",
       index: item && item.Index != null ? String(item.Index) : String(visibleIndex)
     });
+  }
+
+  function cancelPendingChatSelection() {
+    if (!state.pendingChatSelectionTimer) {
+      return;
+    }
+
+    clearTimeout(state.pendingChatSelectionTimer);
+    state.pendingChatSelectionTimer = null;
+  }
+
+  function queueChatSelection(item, visibleIndex) {
+    cancelPendingChatSelection();
+
+    state.pendingChatSelectionTimer = window.setTimeout(function () {
+      state.pendingChatSelectionTimer = null;
+      notifyChatSelection(item, visibleIndex);
+    }, CHAT_ITEM_CLICK_TO_HOST_DELAY_MS);
   }
 
   function notifyNextPage(lastId) {
@@ -1520,6 +1542,8 @@ function repositionOpenChatItemMenu() {
     menu.appendChild(renameBtn);
     menu.appendChild(deleteBtn);
 
+    let clickTimer = null;
+
     btn.addEventListener("click", function (e) {
       if (e.detail > 1) {
         return;
@@ -1529,12 +1553,26 @@ function repositionOpenChatItemMenu() {
       closeChatItemMenu();
       setFocusedItemId(item && item.Id != null ? item.Id : "");
       syncFocusedRowState();
-      notifyChatSelection(item, visibleIndex);
+
+      queueChatSelection(item, visibleIndex);
     });
 
     btn.addEventListener("dblclick", function (e) {
       e.preventDefault();
       e.stopPropagation();
+
+      cancelPendingChatSelection();
+      beginChatItemRename(row, btn, actionBtn, item);
+    });
+
+    btn.addEventListener("dblclick", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (clickTimer) {
+        clearTimeout(clickTimer);
+        clickTimer = null;
+      }
 
       beginChatItemRename(row, btn, actionBtn, item);
     });

@@ -29,5 +29,6 @@ object Form1: TForm1
     ParentBackground = False
     ShowCaption = False
     TabOrder = 0
+    ExplicitHeight = 584
   end
 end

@@ -8,12 +8,16 @@ uses
 
   {--- Pythia-Webview }
   VCL.WVPythia.Chat, WVPythia.Types, WVPythia.Types.EnumWire, WVPythia.Strs,
+  WVPythia.Chat.Interfaces,
 
   {--- Adpter }
   VCL.WVPythia.Services,
 
+  {--- AsyncTools}
+  Demo.Anthropic.AsyncUtils,
+
   {--- Anthropic SDK }
-  Anthropic, Anthropic.Browser.Services;
+  Anthropic, Demo.Anthropic.Services, Demo.Anthropic.Context;
 
 const
   STILL_IN_PROGRESS_ERROR =
@@ -24,6 +28,7 @@ type
     Panel2: TPanel;
     procedure FormCreate(Sender: TObject);
     procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
+    procedure Button1Click(Sender: TObject);
   private
     procedure DoOnInitialized;
     procedure UpdateApiKey(KeyName: string);
@@ -38,9 +43,18 @@ implementation
 
 {$R *.dfm}
 
+procedure TForm1.Button1Click(Sender: TObject);
+begin
+  (Pythia as IPythiaBrowser).SetSendButtonAvailability(False);
+end;
+
 procedure TForm1.DoOnInitialized;
 begin
-  AnthropicVendor := TAnthropicServices.Create(Pythia);
+  AnthropicVendor := TAnthropicServices.Create(
+    Pythia,
+    TAnthropicContext.CreateInstance(Pythia)
+  );
+
   AlphaBlend := False;
 end;
 
@@ -64,7 +78,6 @@ begin
   AlphaBlend := True;
 
   Pythia := TVCLPythia.Create(Panel2);
-  Pythia.EnabledButtons := Pythia.EnabledButtons + [ebSettings];
   Pythia.OnApiKeyChanged := UpdateApiKey;
   Pythia.ServiceAdapter := TVCLChatManagedItemDialogService.Create;
   Pythia.OnInitialized := DoOnInitialized;

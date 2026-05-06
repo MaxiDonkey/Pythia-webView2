@@ -7,7 +7,7 @@ uses
   System.SysUtils,
 
   WVPythia.Adapter, WVPythia.Chat.ManagedFlow, WVPythia.ManagedItemService,
-  Anthropic.Browser.Services;
+  Demo.Anthropic.Services;
 
 type
   TVCLChatManagedItemDialogService = class(TCustomChatManagedItemDialogService)
@@ -71,6 +71,8 @@ type
 implementation
 
 uses
+  {--- Here we have a cross-interface dependency, which is something to be aware of.
+       I took the liberty of doing it here because this is a demo. }
   Main;
 
 { TVCLChatManagedItemDialogService }

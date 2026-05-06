@@ -247,29 +247,6 @@ type
     class function CreatePersistentChat(const FileName: string = ''): IPersistentChat; static;
   end;
 
-  TChatSessionProp = record
-    class function Data: string; static; inline;
-    class function CreatedAt: string; static; inline;
-    class function ModifiedAt: string; static; inline;
-    class function Title: string; static; inline;
-    class function Id: string; static; inline;
-    class function Index: string; static; inline;
-    class function Storage: string; static; inline;
-    class function Model: string; static; inline;
-    class function Prompt: string; static; inline;
-    class function Response: string; static; inline;
-    class function Reasoning: string; static; inline;
-    class function JsonPromptState: string; static; inline;
-    class function JsonPrompt: string; static; inline;
-    class function JsonPromptFiles: string; static; inline;
-    class function JsonPromptImages: string; static; inline;
-    class function JsonResponse: string; static; inline;
-    class function JsonReponseFiles: string; static; inline;
-    class function JsonReponseImages: string; static; inline;
-    class function JsonReponseAudio: string; static; inline;
-    class function JsonReponseVideo: string; static; inline;
-  end;
-
 implementation
 
 uses
@@ -970,109 +947,6 @@ begin
     end
   else
     Result := TPersistentChat.Create;
-end;
-
-
-{ TChatSessionProp }
-
-class function TChatSessionProp.CreatedAt: string;
-begin
-  Result := 'createdAt';
-end;
-
-class function TChatSessionProp.Data: string;
-begin
-  Result := 'data';
-end;
-
-class function TChatSessionProp.Id: string;
-begin
-  Result := 'id';
-end;
-
-class function TChatSessionProp.Index: string;
-begin
-  Result := 'index';
-end;
-
-class function TChatSessionProp.JsonPrompt: string;
-begin
-  Result := 'jsonPrompt';
-end;
-
-class function TChatSessionProp.JsonPromptFiles: string;
-begin
-  Result := 'JsonPromptFiles';
-end;
-
-class function TChatSessionProp.JsonPromptImages: string;
-begin
-  Result := 'JsonPromptImages';
-end;
-
-class function TChatSessionProp.JsonPromptState: string;
-begin
-  Result := 'JsonPromptState';
-end;
-
-class function TChatSessionProp.JsonReponseAudio: string;
-begin
-  Result := 'JsonReponseAudio';
-end;
-
-class function TChatSessionProp.JsonReponseFiles: string;
-begin
-  Result := 'JsonReponseFiles';
-end;
-
-class function TChatSessionProp.JsonReponseImages: string;
-begin
-  Result := 'JsonReponseImages';
-end;
-
-class function TChatSessionProp.JsonReponseVideo: string;
-begin
-  Result := 'JsonReponseVideo';
-end;
-
-class function TChatSessionProp.JsonResponse: string;
-begin
-  Result := 'jsonResponse';
-end;
-
-class function TChatSessionProp.Model: string;
-begin
-  Result := 'model';
-end;
-
-class function TChatSessionProp.ModifiedAt: string;
-begin
-  Result := 'modifiedAt';
-end;
-
-class function TChatSessionProp.Prompt: string;
-begin
-  Result := 'prompt';
-end;
-
-class function TChatSessionProp.Reasoning: string;
-begin
-  Result := 'reasoning';
-end;
-
-class function TChatSessionProp.Response: string;
-begin
-  Result := 'response';
-end;
-
-class function TChatSessionProp.Storage: string;
-begin
-  Result := 'storage';
-end;
-
-class function TChatSessionProp.Title: string;
-begin
-  Result := 'title';
 end;
 
 { TGUIDBuilder }

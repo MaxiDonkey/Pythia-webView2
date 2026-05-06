@@ -1,4 +1,4 @@
-unit WVPythia.Chat.EventHandlers;
+ï»¿unit WVPythia.Chat.EventHandlers;
 
 //{$I Debug.inc}
 
@@ -152,6 +152,8 @@ type
     function InputSubmitEvent: Boolean;
     function InputStateEvent: Boolean;
 
+    function FileRemovedEvent: Boolean;
+
     function OpenFileDialogEvent: Boolean;
     function OpenFunctionDialogEvent: Boolean;
     function OpenMCPDialogEvent: Boolean;
@@ -205,46 +207,46 @@ implementation
     by TBrowserEventManager, then handled here through small, focused methods.
 
     Purpose:
-    • Bridge JSON-driven browser events to chat/session/orchestrator services.
-    • Keep event execution logic separated from event routing.
-    • Coordinate UI updates, persistence, dialogs, managed items, and prompt flow.
-    • Provide a shared event handling layer independently of the concrete UI
+    ï¿½ Bridge JSON-driven browser events to chat/session/orchestrator services.
+    ï¿½ Keep event execution logic separated from event routing.
+    ï¿½ Coordinate UI updates, persistence, dialogs, managed items, and prompt flow.
+    ï¿½ Provide a shared event handling layer independently of the concrete UI
       framework using it.
 
     Class layering:
-    • TOrchestratorEventHandler
+    ï¿½ TOrchestratorEventHandler
       Handles prompt/orchestrator flow, turn creation, completion callbacks,
       payload preparation, command handling, and prompt UI replay.
 
-    • TCardEventHandler
+    ï¿½ TCardEventHandler
       Handles managed card selection helpers.
 
-    • TDialogConfirmationEventHandler
+    ï¿½ TDialogConfirmationEventHandler
       Handles deferred confirmation flows and managed item dialog opening.
 
-    • TChatSessionEventHandler
+    ï¿½ TChatSessionEventHandler
       Handles chat session creation, selection, pagination, deletion, and rename.
 
-    • TOpenFileEventHandler
+    ï¿½ TOpenFileEventHandler
       Handles file selection callbacks.
 
-    • TSelectorEventHandler / TCodeCopyEventHandler / TBrowserScrollEventHandler
+    ï¿½ TSelectorEventHandler / TCodeCopyEventHandler / TBrowserScrollEventHandler
       Handle message-level actions such as branch, copy, delete, code copy, and
       scroll requests.
 
-    • TModelsEventHandler / TSettingsEventHandler
+    ï¿½ TModelsEventHandler / TSettingsEventHandler
       Handle model and settings-related actions.
 
-    • TBrowserEventHandlers
+    ï¿½ TBrowserEventHandlers
       Final concrete handler surface consumed by TBrowserEventManager.
 
     Architectural assumptions:
-    • This class hierarchy does not route events by enum.
+    ï¿½ This class hierarchy does not route events by enum.
       Routing is owned by TBrowserEventManager.
-    • FReader is prepared before handler execution.
-    • Readiness is guaranteed by CanHandleEvents before dispatch.
-    • FBrowser is a mandatory invariant.
-    • Optional services are checked per event when required.
+    ï¿½ FReader is prepared before handler execution.
+    ï¿½ Readiness is guaranteed by CanHandleEvents before dispatch.
+    ï¿½ FBrowser is a mandatory invariant.
+    ï¿½ Optional services are checked per event when required.
 
     Event flow model:
     1. TBrowserEventManager receives raw JSON from the browser.
@@ -255,55 +257,55 @@ implementation
     6. The action is delegated to the proper service or browser abstraction.
 
     Important patterns:
-    • Confirmation events are split:
+    ï¿½ Confirmation events are split:
       . initial request opens/records the pending action
       . DialogConfirmationResponseEvent performs the confirmed action
 
-    • Managed item execution uses a request/completion pattern:
+    ï¿½ Managed item execution uses a request/completion pattern:
       . input state is persisted first as a chat turn
       . execution is delegated through IChatManagedItemDialogService
       . completion is injected later through CompleteTurn
 
-    • UI synchronization is centralized:
+    ï¿½ UI synchronization is centralized:
       . UI mutations go through IBrowser or injected browser scripts
       . UpdatePromptUI replays the full input state into the browser
 
-    • Persistence is incremental:
+    ï¿½ Persistence is incremental:
       . chat state is saved after structural changes
       . deletion relies on UI/persistent prompt alignment
 
     Custom events:
-    • CustomEvent handles the reserved browser event "custom-event".
-    • It forwards the complete JSON message to the dialog service through:
+    ï¿½ CustomEvent handles the reserved browser event "custom-event".
+    ï¿½ It forwards the complete JSON message to the dialog service through:
 
           FDialogService.ActivateCustomEvent(FReader.ToJson)
 
-    • This layer does not interpret "name" or "payload".
-    • No Delphi data model is imposed for custom payloads.
-    • The application service layer is responsible for parsing, validating, and
+    ï¿½ This layer does not interpret "name" or "payload".
+    ï¿½ No Delphi data model is imposed for custom payloads.
+    ï¿½ The application service layer is responsible for parsing, validating, and
       dispatching user-defined custom events.
 
     JSON handling:
-    • All event data must be read through TJsonReader / FReader.
-    • Handlers should validate required nodes before reading them.
-    • Payload-specific parsing must remain local to the handler or be delegated
+    ï¿½ All event data must be read through TJsonReader / FReader.
+    ï¿½ Handlers should validate required nodes before reading them.
+    ï¿½ Payload-specific parsing must remain local to the handler or be delegated
       to the application service when the payload is user-defined.
 
     Design boundaries:
-    • This unit does not own event-to-method dispatch.
-    • This unit does not define browser event names.
-    • This unit does not implement concrete dialogs.
-    • This unit does not contain UI-framework-specific behavior.
-    • This unit should not deserialize custom-event payloads into predefined
+    ï¿½ This unit does not own event-to-method dispatch.
+    ï¿½ This unit does not define browser event names.
+    ï¿½ This unit does not implement concrete dialogs.
+    ï¿½ This unit does not contain UI-framework-specific behavior.
+    ï¿½ This unit should not deserialize custom-event payloads into predefined
       Delphi types.
 
     Reading this unit in isolation:
-    • Event routing is implemented in TBrowserEventManager.Aggregate.
-    • Dispatch table initialization is implemented in TBrowserEventManager.
-    • Event identifiers and wire names come from Browser.Types and
+    ï¿½ Event routing is implemented in TBrowserEventManager.Aggregate.
+    ï¿½ Dispatch table initialization is implemented in TBrowserEventManager.
+    ï¿½ Event identifiers and wire names come from Browser.Types and
       Browser.Types.EnumWire.
-    • Constants come from Browser.Chat.Consts.
-    • Concrete application behavior is reached through injected services such as
+    ï¿½ Constants come from Browser.Chat.Consts.
+    ï¿½ Concrete application behavior is reached through injected services such as
       IBrowser, IPersistentChat, and IChatManagedItemDialogService.
 
 *)
@@ -416,6 +418,22 @@ end;
 function TBrowserEventHandlers.DisplayFileClickEvent: Boolean;
 begin
   Result := OpenFile;
+end;
+
+function TBrowserEventHandlers.FileRemovedEvent: Boolean;
+begin
+  Result := False;
+
+  if not FReader.IsStringNode(PROP_PATH) then
+    Exit;
+
+  var Path := FReader.AsString(PROP_PATH);
+
+  var UploadService := FBrowser.FileUploadService;
+  if Assigned(UploadService) then
+    UploadService.CancelOrDelete(Path);
+
+  Result := True;
 end;
 
 function TBrowserEventHandlers.InputStateEvent: Boolean;
@@ -732,7 +750,7 @@ begin
      not FileExists(FBrowser.GetModelCategoriesFileName) then
     Exit(Payload);
 
-  {--- Récupérer le contenu du JSON }
+  {--- Rï¿½cupï¿½rer le contenu du JSON }
   var ParamsPayload := TFileIOHelper.LoadFromFile(FBrowser.GetModelCategoriesFileName);
   var Writer := TJsonWriter.Parse(Payload);
 
@@ -846,6 +864,10 @@ end;
 procedure TOrchestratorEventHandler.UpdateMessageUI(
   const State: TManagedItemLLMResult);
 begin
+  FBrowser.DisplayMedia(dkImages, State.ImageList, False);
+  FBrowser.DisplayMedia(dkFile, State.FileList, False);
+  FBrowser.DisplayMedia(dkVideo, State.VideoList, False);
+  FBrowser.DisplayMedia(dkAudio, State.AudioList, False);
   FBrowser.DisplayFooter(State.Model);
   FBrowser.DisplaySpacer();
 
@@ -1093,6 +1115,8 @@ begin
       FBrowser.PromptCount := index - 1;
 
       SavePersistentChatAfterDeletion;
+
+      FBrowser.ScrollToAfterEnd(60, False);
     end
   else
   if Goal = TDialogGoal.DeleteChatSession then
@@ -1154,6 +1178,14 @@ begin
 
   if FOpenDialog.Execute(Filter, FilterIndex, SelectedPaths) then
     begin
+      {--- Resolve the optional upload service once per dialog. When the host
+           bootstrap registered an IFileUploadService, every selected file
+           that ShouldHandle accepts is also routed through SubmitForUpload.
+           The inline JS notification still happens unconditionally so the
+           compose box continues to render the bubble immediately, regardless
+           of whether the file is also being uploaded in the background. }
+      var UploadService := FBrowser.FileUploadService;
+
       {--- Each selected path is pushed individually into the browser input model. }
       for var Item in SelectedPaths.Split([#10]) do
         begin
@@ -1162,6 +1194,10 @@ begin
               TEscapeHelper.EscapeJSString(Item),
               TEscapeHelper.EscapeJSString(Target.ToString)])
           );
+
+          if Assigned(UploadService) and
+             UploadService.ShouldHandle(Item, Target) then
+            UploadService.SubmitForUpload(Item, Target, nil);
         end;
     end;
 end;

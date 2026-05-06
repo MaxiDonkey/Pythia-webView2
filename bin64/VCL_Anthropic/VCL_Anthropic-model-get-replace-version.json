@@ -23,7 +23,7 @@
                 "Web research",
                 "Vision"
             ],
-            "model": "claude-opus-4-7",
+            "model": "claude-opus-4-6",
             "visible": true
         },
         {

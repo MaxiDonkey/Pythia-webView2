@@ -197,6 +197,7 @@
     host.__customItems = [];
     host.__welcomeText = "";
     host.__sendButtonState = "input-mode";
+    host.__sendButtonAvailable = true;
 
     function buildEnabledFunctionsState() {
       return {
@@ -607,6 +608,14 @@
       sendBtn.textContent = state === SEND_BUTTON_STOP_MODE
         ? SEND_BUTTON_STOP_ICON
         : SEND_BUTTON_INPUT_ICON;
+
+      // Orthogonal availability flag, controlled by setSendButtonAvailability
+      // and used to lock the send button while uploads are in flight.
+      const available = host.__sendButtonAvailable !== false;
+      sendBtn.dataset.available = available ? "true" : "false";
+      sendBtn.style.opacity = available ? "" : "0.4";
+      sendBtn.style.cursor = available ? "" : "not-allowed";
+      sendBtn.style.pointerEvents = available ? "" : "none";
     }
 
     function setSendButtonState(state) {
@@ -913,6 +922,49 @@
 
     }
 
+    // Notify Delphi when an uploaded (or in-flight) file is removed from the
+    // compose box, so the upload service can cancel the in-flight transfer or
+    // delete the remote file. Files that never engaged the upload pipeline
+    // (no fileId, no uploading state) do not produce a notification.
+    function notifyFileRemoved(removed) {
+      if (!removed) return;
+      if (!window.chrome || !window.chrome.webview) return;
+      if (!removed.fileId && removed.uploadStatus !== "uploading") return;
+
+      window.chrome.webview.postMessage({
+        event: "file-removed",
+        path: removed.path
+      });
+    }
+
+    // Append a small visual badge to a chip reflecting the upload status of
+    // its underlying file entry. Files without an uploadStatus are unaffected.
+    function applyUploadStatusToChip(chip, file) {
+      if (!file || !file.uploadStatus) return;
+
+      const badge = document.createElement("span");
+      badge.className = "input-chip-upload-status";
+      badge.style.marginLeft = "4px";
+      badge.style.fontSize = "11px";
+      badge.style.fontFamily = "Segoe Fluent Icons";
+
+      if (file.uploadStatus === "uploading") {
+        badge.textContent = "\uE895"; // Sync
+        badge.title = "Uploading";
+        badge.style.opacity = "0.7";
+      } else if (file.uploadStatus === "ready") {
+        badge.textContent = "\uE73E"; // CheckMark
+        badge.title = "Uploaded";
+        badge.style.color = "#4caf50";
+      } else if (file.uploadStatus === "failed") {
+        badge.textContent = "\uE783"; // Error
+        badge.title = file.uploadError || "Upload failed";
+        badge.style.color = "#e57373";
+      }
+
+      chip.appendChild(badge);
+    }
+
     function renderFiles() {
 
       filesRow.innerHTML = "";
@@ -935,25 +987,27 @@
       filesRow.style.display = "flex";
 
       host.__files.forEach((file, i) => {
-        filesRow.appendChild(
-          createChip("\uE16C", file.name, function () {
-            host.__files.splice(i, 1);
-            render();
-          })
-        );
+        const chip = createChip("\uE16C", file.name, function () {
+          const removed = host.__files.splice(i, 1)[0];
+          notifyFileRemoved(removed);
+          render();
+        });
+        applyUploadStatusToChip(chip, file);
+        filesRow.appendChild(chip);
       });
 
       host.__knowledgeFiles.forEach((file, i) => {
-        filesRow.appendChild(
-          createChip("\uE11A", file.name, function () {
-            host.__knowledgeFiles.splice(i, 1);
+        const chip = createChip("\uE11A", file.name, function () {
+          const removed = host.__knowledgeFiles.splice(i, 1)[0];
+          notifyFileRemoved(removed);
 
-            if (host.__knowledgeFiles.length === 0)
-              host.__features.delete("knowledge-search");
+          if (host.__knowledgeFiles.length === 0)
+            host.__features.delete("knowledge-search");
 
-            render();
-          })
-        );
+          render();
+        });
+        applyUploadStatusToChip(chip, file);
+        filesRow.appendChild(chip);
       });
 
       host.__images.forEach((file, i) => {
@@ -1353,84 +1407,122 @@
       render();
     };
 
-    window.onIntegrationFunctionSelected = function(id, name) {
-      if (!id || !name) return;
+    function parseIntegrationSelection(value) {
+      if (typeof value === "string") {
+        const text = value.trim();
 
-      id = String(id);
-      name = String(name);
+        if (text.length > 0) {
+          const first = text.charAt(0);
+          const last = text.charAt(text.length - 1);
 
-      const existing = host.__integrationFunctions.find(f => f.id === id);
-
-      if (existing) {
-        existing.name = name;
-      } else {
-        host.__integrationFunctions.push({
-          id: id,
-          name: name
-        });
+          if (
+            (first === "[" && last === "]") ||
+            (first === "{" && last === "}")
+          ) {
+            try {
+              return JSON.parse(text);
+            } catch (_) {
+              return value;
+            }
+          }
+        }
       }
+
+      return value;
+    }
+
+    function normalizeIntegrationSelection(idOrItems, name) {
+      const parsed = parseIntegrationSelection(idOrItems);
+      const source = Array.isArray(parsed) ? parsed : [parsed];
+
+      return source
+        .map(function (item) {
+          if (item && typeof item === "object") {
+            const id =
+              item.id != null ? item.id :
+              item.ID != null ? item.ID :
+              item.value != null ? item.value :
+              item.key != null ? item.key :
+              null;
+
+            const label =
+              item.name != null ? item.name :
+              item.Name != null ? item.Name :
+              item.label != null ? item.label :
+              item.title != null ? item.title :
+              null;
+
+            return {
+              id: id == null ? "" : String(id),
+              name: label == null ? "" : String(label)
+            };
+          }
+
+          return {
+            id: idOrItems == null ? "" : String(idOrItems),
+            name: name == null ? "" : String(name)
+          };
+        })
+        .filter(function (item) {
+          return item.id !== "" && item.name !== "";
+        });
+    }
+
+    function upsertIntegrationSelection(list, idOrItems, name, replace) {
+      const items = normalizeIntegrationSelection(idOrItems, name);
+
+      if (replace) {
+        list.length = 0;
+      }
+
+      items.forEach(function (item) {
+        const existing = list.find(function (f) {
+          return f.id === item.id;
+        });
+
+        if (existing) {
+          existing.name = item.name;
+        } else {
+          list.push({
+            id: item.id,
+            name: item.name
+          });
+        }
+      });
 
       render();
     }
 
+    window.onIntegrationFunctionSelected = function(id, name) {
+      upsertIntegrationSelection(host.__integrationFunctions, id, name, false);
+    };
+
     window.onIntegrationMcpSelected = function(id, name) {
-      if (!id || !name) return;
-
-      id = String(id);
-      name = String(name);
-
-      const existing = host.__integrationMcps.find(f => f.id === id);
-
-      if (existing) {
-        existing.name = name;
-      } else {
-        host.__integrationMcps.push({
-          id: id,
-          name: name
-        });
-      }
-
-      render();
+      upsertIntegrationSelection(host.__integrationMcps, id, name, false);
     };
 
     window.onIntegrationSkillSelected = function(id, name) {
-      if (!id || !name) return;
-
-      id = String(id);
-      name = String(name);
-
-      const existing = host.__integrationSkills.find(f => f.id === id);
-
-      if (existing) {
-        existing.name = name;
-      } else {
-        host.__integrationSkills.push({
-          id: id,
-          name: name
-        });
-      }
-
-      render();
+      upsertIntegrationSelection(host.__integrationSkills, id, name, false);
     };
 
     window.onIntegrationAgentSelected = function(id, name) {
-      if (!id || !name) return;
+      upsertIntegrationSelection(host.__integrationAgents, id, name, false);
+    };
 
-      id = String(id);
-      name = String(name);
+    window.setIntegrationFunctions = function(items) {
+      upsertIntegrationSelection(host.__integrationFunctions, items, null, true);
+    };
 
-      const existing = host.__integrationAgents.find(f => f.id === id);
+    window.setIntegrationMcps = function(items) {
+      upsertIntegrationSelection(host.__integrationMcps, items, null, true);
+    };
 
-      if (existing) {
-        existing.name = name;
-      } else {
-        host.__integrationAgents.push({
-          id: id,
-          name: name
-        });
-      }
+    window.setIntegrationSkills = function(items) {
+      upsertIntegrationSelection(host.__integrationSkills, items, null, true);
+    };
 
-      render();
+    window.setIntegrationAgents = function(items) {
+      upsertIntegrationSelection(host.__integrationAgents, items, null, true);
     };
 
     window.onCustomSelected = function(id, name) {
@@ -1543,7 +1635,8 @@
 
         files: host.__files.map(f => ({
           name: f.name,
-          fullPath: f.path || null
+          fullPath: f.path || null,
+          fileId: f.fileId || null
         })),
 
         images: host.__images.map(f => ({
@@ -1553,7 +1646,8 @@
 
         knowledgeSearch: host.__knowledgeFiles.map(f => ({
           name: f.name,
-          fullPath: f.path || null
+          fullPath: f.path || null,
+          fileId: f.fileId || null
         })),
 
         integration: {
@@ -1562,6 +1656,10 @@
             name: f.name
           })),
           mcp: host.__integrationMcps.map(f => ({
+            id: f.id,
+            name: f.name
+          })),
+          skills: host.__integrationSkills.map(f => ({
             id: f.id,
             name: f.name
           })),
@@ -1618,6 +1716,46 @@
       return setSendButtonState(state);
     };
 
+    // Updates the upload status of a file already present in the compose box,
+    // identified by its local path. Looks first in __files, then in
+    // __knowledgeFiles. When status is "ready", fileId is stored on the
+    // entry. When status is "failed", errorMessage is stored. Unknown paths
+    // are silently ignored.
+    window.setFileUploadStatus = function (path, status, fileId, errorMessage) {
+      if (!path || !status) return false;
+
+      function applyTo(list) {
+        const entry = list.find(function (f) { return f.path === path; });
+        if (!entry) return false;
+
+        entry.uploadStatus = status;
+
+        if (status === "ready") {
+          entry.fileId = fileId || null;
+          delete entry.uploadError;
+        } else if (status === "failed") {
+          entry.uploadError = errorMessage || "";
+        } else if (status === "uploading") {
+          delete entry.uploadError;
+        }
+
+        return true;
+      }
+
+      const updated = applyTo(host.__files) || applyTo(host.__knowledgeFiles);
+      if (updated) render();
+      return updated;
+    };
+
+    // Orthogonal flag controlling whether the send button is clickable.
+    // The send button visual mode (input / stop) keeps working independently;
+    // when availability is false, the button is greyed out and clicks are
+    // ignored. Used to lock submit while uploads are in flight.
+    window.setSendButtonAvailability = function (enabled) {
+      host.__sendButtonAvailable = !!enabled;
+      applySendButtonStateUI();
+    };
+
     window.partialResetInputBubble = function () {
       textarea.value = "";
       autoResizeTextarea();
@@ -1628,11 +1766,15 @@
       host.__images = [];
       host.__knowledgeFiles = [];
       host.__speechToTextFiles = [];
-      host.__customItems = [];
 
       host.__features.delete("knowledge-search");
-      host.__features.delete("custom");
       host.__features.delete("media-text-to-speech");
+
+      // After a bulk reset, no upload can still be in flight from the user's
+      // point of view. Re-enable submit so the button does not stay locked
+      // if Delphi never re-pushes availability.
+      host.__sendButtonAvailable = true;
+      applySendButtonStateUI();
 
       closeDropdown();
       render();
@@ -2868,6 +3010,11 @@
         });
         return;
       }
+
+      // Locked while uploads are in flight; Delphi re-enables via
+      // setSendButtonAvailability(true) when no transfer is pending.
+      if (host.__sendButtonAvailable === false)
+        return;
 
       const text = textarea.value.trim();
       if (!text) return;

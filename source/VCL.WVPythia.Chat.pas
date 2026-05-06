@@ -326,6 +326,8 @@ type
   private
     FLocked: Boolean;
     FEscape: Boolean;
+    function LogoAnimationShow: Boolean;
+    function LogoAnimationHide: Boolean;
     function GetLocked: Boolean; virtual;
     procedure SetLocked(const Value: Boolean); virtual;
     function GetEscape: Boolean; virtual;
@@ -473,7 +475,25 @@ type
     property CommandLine: ICommandRegistry read GetCommandLine write SetCommandLine;
   end;
 
-  TInterfacedVCLPythia = class(TVCLPythiaCommandLine, IPythiaBrowser)
+  {--- Holds the optional vendor-provided upload service. Slotted between
+       TVCLPythiaCommandLine and TInterfacedVCLPythia so the IPythiaBrowser
+       implementer transparently inherits Get/Set, mirroring the layering
+       used for ApiKeySecretStore in TVCLPythiaAPIKeyManager. }
+  TVCLPythiaFileUploadManager = class(TVCLPythiaCommandLine)
+  private
+    FFileUploadService: IFileUploadService;
+  protected
+    function GetFileUploadService: IFileUploadService;
+    procedure SetFileUploadService(const Value: IFileUploadService);
+    function SetFileUploadStatus(
+      const APath: string;
+      const AStatus: string;
+      const AFileId: string = '';
+      const AErrorMessage: string = ''): Boolean;
+    function SetSendButtonAvailability(const AEnabled: Boolean): Boolean;
+  end;
+
+  TInterfacedVCLPythia = class(TVCLPythiaFileUploadManager, IPythiaBrowser)
   strict private
     const
       CLEARANCE = 400;
@@ -603,6 +623,16 @@ type
     /// Assign a custom <see cref="ISecretStore"/> before calling Update to replace the default backend.
     /// </summary>
     property ApiKeySecretStore: ISecretStore read GetApiKeySecretStore write SetApiKeySecretStore;
+
+    /// <summary>
+    /// Optional service invoked when files are selected through the open dialog.
+    /// When assigned, every file accepted by <c>ShouldHandle</c> is also routed
+    /// through <c>SubmitForUpload</c> so the host can transfer it asynchronously
+    /// to a remote storage (Files API and similar) and reference it later by an
+    /// opaque file id. Leave unset to keep the default inline pipeline where
+    /// selected files are sent as document blocks.
+    /// </summary>
+    property FileUploadService: IFileUploadService read GetFileUploadService write SetFileUploadService;
 
     /// <summary>
     /// Occurs after the browser, bridge, settings, model list, capabilities,
@@ -1221,10 +1251,11 @@ begin
         First := False;
       end;
       DisplaySpacer;
+
+      ScrollToEnd(False);
+      SetFocus;
   finally
     EndUpdate;
-    ScrollToEnd(False);
-    SetFocus;
   end;
 end;
 
@@ -1518,6 +1549,7 @@ begin
   ExecuteScript(TemplateProvider.ErrorsTemplate);
   ExecuteScript(TemplateProvider.ChatFooterTemplate);
   ExecuteScript(TemplateProvider.CardSelectorTemplate);
+  ExecuteScript(TemplateProvider.ActivityLogoTemplate);
   ExecuteScript(TemplateProvider.InputDialogTemplate);
 
   {--- Load and inject custom the JS templates }
@@ -2000,6 +2032,16 @@ begin
   Result := FLocked;
 end;
 
+function TVCLPythiaLockServices.LogoAnimationHide: Boolean;
+begin
+  Result := ExecuteScript(LOGO_ANIMATION_HIDE);
+end;
+
+function TVCLPythiaLockServices.LogoAnimationShow: Boolean;
+begin
+  Result := ExecuteScript(LOGO_ANIMATION_SHOW);
+end;
+
 procedure TVCLPythiaLockServices.SetEscape(const Value: Boolean);
 begin
   FEscape := Value;
@@ -2014,6 +2056,12 @@ begin
     Format(SENDBTN_STATE_TEMPLATE, [TOGGLE[FLocked]]),
     'sendbtn-state'
   );
+
+  if FLocked then
+    LogoAnimationShow
+  else
+    LogoAnimationHide;
+
   Sleep(100);
 end;
 
@@ -2659,6 +2707,40 @@ procedure TVCLPythiaAPIKeyManager.SetApiKeySecretStore(
   const Value: ISecretStore);
 begin
   FApiKeySecretStore := Value;
+end;
+
+{ TVCLPythiaFileUploadManager }
+
+function TVCLPythiaFileUploadManager.GetFileUploadService: IFileUploadService;
+begin
+  Result := FFileUploadService;
+end;
+
+procedure TVCLPythiaFileUploadManager.SetFileUploadService(
+  const Value: IFileUploadService);
+begin
+  FFileUploadService := Value;
+end;
+
+function TVCLPythiaFileUploadManager.SetFileUploadStatus(const APath, AStatus,
+  AFileId, AErrorMessage: string): Boolean;
+begin
+  Result := ExecuteScript(
+    Format(FILE_UPLOAD_STATUS_TEMPLATE, [
+      APath,
+      AStatus,
+      AFileId,
+      AErrorMessage
+    ])
+  );
+end;
+
+function TVCLPythiaFileUploadManager.SetSendButtonAvailability(
+  const AEnabled: Boolean): Boolean;
+begin
+  Result := ExecuteScript(
+    Format(SEND_BUTTON_AVAILABILITY_TEMPLATE, [TCastHelp.BoolToStr(AEnabled)])
+  );
 end;
 
 { TVCLPythiaInputValue }

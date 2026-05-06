@@ -681,6 +681,9 @@ type
     /// </remarks>
     function BudgetTokens(const Value: Integer): TThinkingConfigParam;
 
+    function Display(const Value: TThinkingDisplay): TThinkingConfigParam; overload;
+    function Display(const Value: string): TThinkingConfigParam; overload;
+
     class function New(const State: TThinkingType): TThinkingConfigParam; overload;
     class function New(const Value: string): TThinkingConfigParam; overload;
   end;
@@ -3646,6 +3649,18 @@ class function TThinkingConfigParam.New(
   const State: TThinkingType): TThinkingConfigParam;
 begin
   Result := TThinkingConfigParam.Create.&Type(State);
+end;
+
+function TThinkingConfigParam.Display(
+  const Value: TThinkingDisplay): TThinkingConfigParam;
+begin
+  Result := Display(Value.ToString);
+end;
+
+function TThinkingConfigParam.Display(
+  const Value: string): TThinkingConfigParam;
+begin
+  Result := TThinkingConfigParam(Add('display', Value));
 end;
 
 class function TThinkingConfigParam.New(

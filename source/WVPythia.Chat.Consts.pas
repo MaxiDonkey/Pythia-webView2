@@ -40,6 +40,7 @@ const
     'Code Files (*.c;*.cpp;*.cs;*.css;*.go;*.html;*.java;*.js;*.json;*.pas;*.php;*.py;*.rb;*.sh;*.tex;*.ts)|*.c;*.cpp;*.cs;*.css;*.go;*.html;*.java;*.js;*.json;*.pas;*.php;*.py;*.rb;*.sh;*.tex;*.ts|' +
     'Audio (*.wav;*.mp3)|*.wav;*.mp3|' +
     'Video (*.mp4)|*.mp4|' +
+    'Compressed Archives (*.zip;*.tar;*.tgz;*.gz)|*.zip;*.tar;*.tgz;*.gz|' +
     'All (*.*)|*.*';
 
   GRAPHIC_EXTENSION =
@@ -103,40 +104,56 @@ const
     'window.setScrollButtonsVisible(%s);';
 
   SCROLL_TO_END_SMOOTH_TEMPLATE =
-    '(function(){' +
-    '  const scroller = document.scrollingElement || document.documentElement || document.body;' +
-    '  const el = document.getElementById("edge-spacer");' +
-    '  if (el) el.style.height = "0px";' +
-    '  setTimeout(function(){' +
-    '    scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });' +
-    '  }, 0);' +
-    '})();';
+      '(function(){' +
+      '  const el = document.getElementById("edge-spacer");' +
+      '  if (el) el.style.height = "0px";' +
+      '  requestAnimationFrame(function(){' +
+      '    requestAnimationFrame(function(){' +
+      '      window.scrollTo({' +
+      '        top: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),' +
+      '        left: 0,' +
+      '        behavior: "smooth"' +
+      '      });' +
+      '    });' +
+      '  });' +
+      '})();';
 
   SCROLL_TO_END_TEMPLATE =
-    '(function(){' +
-    '  const scroller = document.scrollingElement || document.documentElement || document.body;' +
-    '  const el = document.getElementById("edge-spacer");' +
-    '  if (el) el.style.height = "0px";' +
-    '  setTimeout(function(){' +
-    '    scroller.scrollTop = scroller.scrollHeight;' +
-    '  }, 0);' +
-    '})();';
+      '(function(){' +
+      '  const el = document.getElementById("edge-spacer");' +
+      '  if (el) el.style.height = "0px";' +
+      '  requestAnimationFrame(function(){' +
+      '    requestAnimationFrame(function(){' +
+      '      window.scrollTo(0, document.body.scrollHeight);' +
+      '      document.documentElement.scrollTop = document.documentElement.scrollHeight;' +
+      '      document.body.scrollTop = document.body.scrollHeight;' +
+      '    });' +
+      '  });' +
+      '})();';
 
   SCROLL_TO_TOP_SMOOTH_TEMPLATE =
-    '(function(){' +
-    '  const scroller = document.scrollingElement || document.documentElement || document.body;' +
-    '  const el = document.getElementById("edge-spacer");' +
-    '  if (el) el.style.height = "0px";' +
-    '  setTimeout(function(){ scroller.scrollTo({ top: 0, behavior: "smooth" }); }, 0);' +
-    '})();';
+      '(function(){' +
+      '  const el = document.getElementById("edge-spacer");' +
+      '  if (el) el.style.height = "0px";' +
+      '  requestAnimationFrame(function(){' +
+      '    requestAnimationFrame(function(){' +
+      '      window.scrollTo({ top: 0, left: 0, behavior: "smooth" });' +
+      '    });' +
+      '  });' +
+      '})();';
 
   SCROLL_TO_TOP_TEMPLATE =
-    '(function(){' +
-    '  const scroller = document.scrollingElement || document.documentElement || document.body;' +
-    '  const el = document.getElementById("edge-spacer");' +
-    '  if (el) el.style.height = "0px";' +
-    '  setTimeout(function(){ scroller.scrollTop = 0; }, 0);' +
-    '})();';
+  '(function(){' +
+  '  const el = document.getElementById("edge-spacer");' +
+  '  if (el) el.style.height = "0px";' +
+  '  requestAnimationFrame(function(){' +
+  '    requestAnimationFrame(function(){' +
+  '      window.scrollTo({ top: 0, left: 0, behavior: "auto" });' +
+  '      document.documentElement.scrollTop = 0;' +
+  '      document.body.scrollTop = 0;' +
+  '    });' +
+  '  });' +
+  '})();';
 
   TOGGLE_REASONING_TEMPLATE =
     'window.DisplayTemplate.toggleReasoning();';
@@ -149,6 +166,12 @@ const
 
   STOP_VIDEO_TEMPLATE =
     'window.StopVideo();';
+
+  LOGO_ANIMATION_SHOW =
+    'ActivityShow({ placement: "top-center", size: 24, gap: 12, offsetX: 0, offsetY: 0 });';
+
+  LOGO_ANIMATION_HIDE =
+    'if (window.ActivityHide) ActivityHide();';
 
   DELETE_BLOCK_TEMPLATE =
     '(() => {' +
@@ -246,6 +269,25 @@ const
 
   MODEL_SELECTOR_PANEL_HIDE =
     'window.ModelSelectorPanel.hide();';
+
+  (*
+     --------------------
+           API FILE
+     --------------------
+  *)
+
+  FILE_UPLOAD_STATUS_TEMPLATE =
+    'window.setFileUploadStatus(%s,%s,%s,%s)';
+
+  SEND_BUTTON_AVAILABILITY_TEMPLATE =
+    'window.setSendButtonAvailability(%s)';
+
+
+  FILE_UPLOAD_STATUS_UPLOADING = '"uploading"';
+  FILE_UPLOAD_STATUS_READY     = '"ready"';
+  FILE_UPLOAD_STATUS_FAILED    = '"failed"';
+
+  PROP_PATH = 'path';
 
   (*
      --------------------

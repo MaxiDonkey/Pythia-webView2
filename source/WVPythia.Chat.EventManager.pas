@@ -318,6 +318,7 @@ begin
   FDispatch[TBrowserChatEvent.InputSubmit] := InputSubmitEvent;
   FDispatch[TBrowserChatEvent.InputState] := InputStateEvent;
   FDispatch[TBrowserChatEvent.OpenFileDialog] := OpenFileDialogEvent;
+  FDispatch[TBrowserChatEvent.FileRemoved] := FileRemovedEvent;
   FDispatch[TBrowserChatEvent.OpenIntegrationFunctionDialog] := OpenFunctionDialogEvent;
   FDispatch[TBrowserChatEvent.OpenIntegrationMcpDialog] := OpenMCPDialogEvent;
   FDispatch[TBrowserChatEvent.OpenIntegrationSkillsDialog] := OpenSkillsDialogEvent;

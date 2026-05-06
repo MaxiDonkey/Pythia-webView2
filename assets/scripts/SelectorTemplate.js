@@ -111,7 +111,11 @@
         ? targetBlock.querySelector(".chat-bubble.user.prompt-bubble")
         : null;
 
-      return normalizeSelectorContent(bubble ? (bubble.innerText || bubble.textContent || "") : "");
+      const body = bubble
+        ? bubble.querySelector(".prompt-body")
+        : null;
+
+      return normalizeSelectorContent(body ? (body.textContent || "") : "");
     }
 
     return "";

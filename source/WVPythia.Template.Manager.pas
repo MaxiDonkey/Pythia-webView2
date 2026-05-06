@@ -51,6 +51,7 @@ type
     js_cardSelector,
     js_promptSummary,
     js_inputDialog,
+    js_activityLogo,
     js_injectionEnded);
 
   TTemplateTypeHelper = record Helper for TTemplateType
@@ -79,6 +80,7 @@ type
         'scripts\CardSelectorTemplate.js',
         'scripts\PromptSummaryTemplate.js',
         'scripts\InputDialogTemplate.js',
+        'scripts\ActivityLogoTemplate.js',
         'scripts\InjectionEndedTemplate.js'
       );
   public
@@ -109,6 +111,7 @@ type
     function GetCardSelectorTemplate: string;
     function GetPromptSummaryTemplate: string;
     function GetInputDialogTemplate: string;
+    function GetActivityLogoTemplate: string;
     function GetInjectionEndedTemplate: string;
 
     function LoadCustomTemplate(const FileName: string): string;
@@ -144,66 +147,28 @@ type
     /// </returns>
     property InitialHtml: string read GetInitialHtml;
 
-    /// <summary>
-    /// Gets the JavaScript template used to display OpenAI responses.
-    /// </summary>
-    /// <returns>
-    /// The content of the response display JavaScript template.
-    /// </returns>
     property DisplayTemplate: string read GetDisplayTemplate;
-
-    /// <summary>
-    /// Gets the JavaScript template used for system reasoning and asynchronous operations.
-    /// </summary>
-    /// <returns>
-    /// The content of the reasoning JavaScript template.
-    /// </returns>
     property ReasoningTemplate: string read GetReasoningTemplate;
-
-    /// <summary>
-    /// Gets the JavaScript template used for user prompt input.
-    /// </summary>
-    /// <returns>
-    /// The content of the prompt JavaScript template.
-    /// </returns>
     property PromptTemplate: string read GetPromptTemplate;
-
     property InputBubbleTemplate: string read GetInputBubble;
-
     property ScrollButtonsTemplate: string read GetScrollButtonsTemplate;
-
     property ImagesTemplate: string read GetImagesTemplate;
-
     property PromptFileTemplate: string read GetPromptFileTemplate;
-
     property AudioTemplate: string read GetAudioTemplate;
-
     property VideoTemplate: string read GetVideoTemplate;
-
     property DisplayfileTemplate: string read GetDisplayfileTemplate;
-
     property SelectorTemplate: string read GetSelectorTemplate;
-
     property ConfirmationDialogTemplate: string read GetConfirmationDialogTemplate;
-
     property FilesDrawerTemplate: string read GetFilesDrawerTemplate;
-
     property ErrorsTemplate: string read GetErrorsTemplate;
-
     property RequestParamsTemplate: string read GetRequestParamsTemplate;
-
     property BootstrapDictionaryTemplate: string read GetBootstrapDictionaryTemplate;
-
     property ChatFooterTemplate: string read GetChatFooterTemplate;
-
     property CardSelectorTemplate: string read GetCardSelectorTemplate;
-
     property PromptSummaryTemplate: string read GetPromptSummaryTemplate;
-
     property ModelsTemplate: string read GetModelsTemplate;
-
     property InputDialogTemplate: string read GetInputDialogTemplate;
-
+    property ActivityLogoTemplate: string read GetActivityLogoTemplate;
     property InjectionEndedTemplate: string read GetInjectionEndedTemplate;
   end;
 
@@ -231,12 +196,16 @@ type
     FCardSelectorTemplate: string;
     FPromptSummaryTemplate: string;
     FInputDialogTemplate: string;
+    FActivityLogoTemplate: string;
     FInjectionEndedTemplate: string;
+
     FAlwaysReloading: Boolean;
     FPath: string;
+
     function LoadTemplate(const FileName: string): string;
     function LoadCustomTemplate(const FileName: string): string;
     procedure InitializeTemplates;
+
     function GetInitialHtml: string;
     function GetDisplayTemplate: string;
     function GetReasoningTemplate: string;
@@ -258,6 +227,7 @@ type
     function GetCardSelectorTemplate: string;
     function GetPromptSummaryTemplate: string;
     function GetInputDialogTemplate: string;
+    function GetActivityLogoTemplate: string;
     function GetInjectionEndedTemplate: string;
 
     function GetSelectorTemplate: string;
@@ -307,6 +277,13 @@ begin
   FPath := TEMPLATE_PATH;
   FAlwaysReloading := False;
   InitializeTemplates;
+end;
+
+function TEdgeInjection.GetActivityLogoTemplate: string;
+begin
+  if FAlwaysReloading then
+    FActivityLogoTemplate := LoadTemplate(js_activityLogo.ToString);
+  Result := FActivityLogoTemplate;
 end;
 
 function TEdgeInjection.GetAudioTemplate: string;
@@ -505,6 +482,7 @@ begin
   FChatFooterTemplate := LoadTemplate(js_chatFooter.ToString);
   FCardSelectorTemplate := LoadTemplate(js_cardSelector.ToString);
   FInputDialogTemplate := LoadTemplate(js_inputDialog.ToString);
+  FActivityLogoTemplate := LoadTemplate(js_activityLogo.ToString);
   FInjectionEndedTemplate := LoadTemplate(js_injectionEnded.ToString);
 end;
 
