@@ -5,7 +5,7 @@ object Form1: TForm1
   AlphaBlendValue = 0
   Caption = 'Pythia-Webview2 - Anthropic vendor Demo'
   ClientHeight = 653
-  ClientWidth = 1079
+  ClientWidth = 1049
   Color = clWindow
   Ctl3D = False
   DoubleBuffered = True
@@ -21,7 +21,7 @@ object Form1: TForm1
   object Panel2: TPanel
     Left = 0
     Top = 0
-    Width = 1079
+    Width = 1049
     Height = 653
     Align = alClient
     BevelOuter = bvNone
@@ -29,6 +29,7 @@ object Form1: TForm1
     ParentBackground = False
     ShowCaption = False
     TabOrder = 0
-    ExplicitHeight = 584
+    ExplicitLeft = 8
+    ExplicitWidth = 1079
   end
 end
