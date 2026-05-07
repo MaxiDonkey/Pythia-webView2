@@ -7,8 +7,7 @@ uses
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls,
 
   {--- Pythia-Webview }
-  VCL.WVPythia.Chat, WVPythia.Types, WVPythia.Types.EnumWire, WVPythia.Strs,
-  WVPythia.Chat.Interfaces,
+  VCL.WVPythia.Chat, WVPythia.Types, WVPythia.Types.EnumWire, WVPythia.Chat.Interfaces,
 
   {--- Adpter }
   VCL.WVPythia.Services,

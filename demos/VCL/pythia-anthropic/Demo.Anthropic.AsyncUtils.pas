@@ -17,6 +17,8 @@ type
     procedure CustomSkillRegister(const SkillID: string; const AName: string);
     function WhenAllRetrieve(const IDs: TArray<string>): TPromise<TArray<string>>;
     procedure AsyncDownloadAs(const ID, LocalPath: string);
+    procedure AsyncDeleteFire(const ID: string);
+    procedure AsyncDeleteAllFire(const IDs: TArray<string>);
   end;
 
   TAnthropicClientUtils = class(TInterfacedObject, IAnthropicClientUtils)
@@ -37,8 +39,20 @@ type
          rejects on first failure. }
     function WhenAllRetrieve(const IDs: TArray<string>): TPromise<TArray<string>>;
 
-    {--- Fire-and-forget download that saves the payload at LocalPath. }
+    {--- Fire-and-forget download that saves the payload at LocalPath, then
+         best-effort deletes the server-side file once the local copy is
+         persisted (or once the download has definitively failed). The delete
+         is itself fire-and-forget; failures are silent. }
     procedure AsyncDownloadAs(const ID, LocalPath: string);
+
+    {--- Fire-and-forget best-effort delete of one server-side file. Empty
+         IDs are ignored. Errors are silent (404/already-deleted is normal
+         after AsyncDownloadAs has already cleaned up). }
+    procedure AsyncDeleteFire(const ID: string);
+
+    {--- Bulk variant. Used to clean up prompt-attached file_ids
+         (State.Files[i].FileId) once the assistant turn has consumed them. }
+    procedure AsyncDeleteAllFire(const IDs: TArray<string>);
   end;
 
 implementation
@@ -142,6 +156,35 @@ begin
           Exit;
         end;
 
+      {--- Single-point settle helpers. All paths (sync setup failure, async
+           Then/Catch bodies) must funnel through these so the outer promise
+           is guaranteed to settle exactly once even when something throws
+           outside the framework's try/except (e.g. CloneException failure on
+           an exotic exception class, or a throw in a queued &Catch lambda). }
+      var SettleResolve: TProc :=
+        procedure
+        begin
+          if Settled then
+            Exit;
+          Settled := True;
+          Resolve(Names);
+        end;
+
+      var SettleReject: TProc<string> :=
+        procedure (Msg: string)
+        begin
+          if Settled then
+            Exit;
+          Settled := True;
+          try
+            Reject(Exception.Create(Msg));
+          except
+            {--- Last-resort guard: never let an exception escape the queued
+                 lambda, otherwise the outer promise stays pending forever and
+                 the surrounding flow never emits TFinalizeData. }
+          end;
+        end;
+
       {--- Per-iteration capture: an inline var Idx := I inside the for body
            does NOT create a fresh slot per iteration in Delphi (the begin..end
            block is shared by all iterations), so all inner closures would
@@ -152,49 +195,117 @@ begin
       var StartOne: TProc<Integer> :=
         procedure (Idx: Integer)
         begin
-          FClient.Files.AsyncAwaitRetrieve(IDs[Idx])
-            .&Then(
-              procedure (Value: TFile)
-              begin
-                if Settled then
-                  Exit;
-                Names[Idx] := Value.Filename;
-                Dec(Remaining);
-                if Remaining = 0 then
-                  begin
-                    Settled := True;
-                    Resolve(Names);
+          try
+            FClient.Files.AsyncAwaitRetrieve(IDs[Idx])
+              .&Then(
+                procedure (Value: TFile)
+                begin
+                  if Settled then
+                    Exit;
+                  try
+                    Names[Idx] := Value.Filename;
+                    Dec(Remaining);
+                    if Remaining = 0 then
+                      SettleResolve();
+                  except
+                    on E: Exception do
+                      SettleReject(Format('Files.Retrieve Then handler failed: %s (%s)',
+                        [E.Message, E.ClassName]));
                   end;
-              end)
-            .&Catch(
-              procedure (E: Exception)
-              begin
-                if Settled then
-                  Exit;
-                Settled := True;
-                Reject(Exception.Create(E.Message));
-              end);
+                end)
+              .&Catch(
+                procedure (E: Exception)
+                begin
+                  {--- Capture message immediately; CloneException on E later
+                       (inside the framework) may dereference a freed object
+                       or fail on an exotic class. Stringifying here is safe. }
+                  var Msg := Format('Files.Retrieve [%s] failed: %s (%s)',
+                    [IDs[Idx], E.Message, E.ClassName]);
+                  SettleReject(Msg);
+                end);
+          except
+            on E: Exception do
+              SettleReject(Format('Files.Retrieve [%s] sync setup failed: %s (%s)',
+                [IDs[Idx], E.Message, E.ClassName]));
+          end;
         end;
 
-      for var I := Low(IDs) to High(IDs) do
-        StartOne(I);
+      try
+        for var I := Low(IDs) to High(IDs) do
+          begin
+            if Settled then
+              Break;
+            StartOne(I);
+          end;
+      except
+        on E: Exception do
+          SettleReject(Format('WhenAllRetrieve loop failed: %s (%s)',
+            [E.Message, E.ClassName]));
+      end;
     end);
 end;
 
 procedure TAnthropicClientUtils.AsyncDownloadAs(const ID, LocalPath: string);
 begin
-  FClient.Files.AsyncAwaitDownload(ID)
+  {--- Capture ID into a local for the closures below. The interface method
+       parameter is captured fine, but a local makes the cleanup intent
+       explicit and avoids any ambiguity when the parameter naming changes. }
+  var FileId := ID;
+
+  FClient.Files.AsyncAwaitDownload(FileId)
     .&Then(
       procedure (Value: TFileDownloaded)
       begin
-        Value.SaveToFile(LocalPath);
+        try
+          Value.SaveToFile(LocalPath);
+        finally
+          {--- Server-side cleanup: this file has now been persisted locally
+               (or failed to persist — either way we don't need it on the
+               provider anymore). Fire-and-forget; the delete itself logs
+               nothing on success and swallows errors. }
+          AsyncDeleteFire(FileId);
+        end;
       end)
     .&Catch(
       procedure (E: Exception)
       begin
         if Assigned(FPythia) then
           FPythia.DisplayError(Format('Download failed:#10%s', [LocalPath]));
+        {--- Even if the download failed, attempt to clean up server-side so
+             we don't leak quota for a file we'll never reuse. }
+        AsyncDeleteFire(FileId);
       end);
+end;
+
+procedure TAnthropicClientUtils.AsyncDeleteFire(const ID: string);
+begin
+  if ID.Trim.IsEmpty then
+    Exit;
+
+  try
+    FClient.Files.AsyncAwaitDelete(ID)
+      .&Then(
+        procedure (Value: TFileDeleted)
+        begin
+          {--- Best-effort: success is the expected case, no UI noise. }
+        end)
+      .&Catch(
+        procedure (E: Exception)
+        begin
+          {--- Silent: 404 on an already-deleted id, or transient network
+               errors, are not worth surfacing in the chat UI. The file is
+               either gone or will be reaped by Anthropic's own retention. }
+        end);
+  except
+    {--- Sync setup failures (FClient in a degraded state) are also silent —
+         this is best-effort cleanup, not a critical path. }
+  end;
+end;
+
+procedure TAnthropicClientUtils.AsyncDeleteAllFire(const IDs: TArray<string>);
+begin
+  for var I := Low(IDs) to High(IDs) do
+    AsyncDeleteFire(IDs[I]);
 end;
 
 procedure TAnthropicClientUtils.ASyncSessionRename(const ChatID,

@@ -47,6 +47,23 @@ type
     procedure Emit(const AOnFinalize: TManagedItemFinalizeProc);
   end;
 
+  /// <summary>
+  /// Ensures the managed finalize callback is emitted at most once.
+  /// </summary>
+  IEmitGuard = interface
+    ['{F2C0A4D7-3E15-4C9A-9D6E-2A7E4D5B8F11}']
+    procedure TryEmit(const Data: TFinalizeData);
+  end;
+
+  TEmitGuard = class(TInterfacedObject, IEmitGuard)
+  private
+    FEmitted: Boolean;
+    FOnFinalize: TManagedItemFinalizeProc;
+  public
+    constructor Create(const AOnFinalize: TManagedItemFinalizeProc);
+    procedure TryEmit(const Data: TFinalizeData);
+  end;
+
   TAnthropicServices = class(TInterfacedObject, IVendorServices)
   const
     API_KEY_NAME = 'anthropic';
@@ -57,7 +74,6 @@ type
     FClientUtils: IAnthropicClientUtils;
 
     function IsEventSuitable(const Event: TChatStream): Boolean;
-
     procedure ChatSessionRename(ID, Value: string);
 
     function ToolsBuilder(
@@ -90,32 +106,92 @@ type
     function HistoricalCodeExecutionRequired: Boolean;
 
     function BuildPayload(
-      const AState: TInputPromptState;
       State: TStateBuffer): TChatParamProc;
 
     function BuildSessionCallbacks(State: TStateBuffer): TSessionCallbacksStream;
 
     function BuildAndCheckPayload(
-      const AState: TInputPromptState;
       State: TStateBuffer;
       out JsonPayloadAsString: string):TChatParamProc;
 
   protected
+    /// <summary>
+    /// Resolves fallback file results after the primary file processing path fails.
+    /// </summary>
     function LoadFileResult(
       var AState: TStateBuffer;
       const ParamProc: TProc<TArray<string>, TArray<string>>): TArray<string>;
 
+    /// <summary>
+    /// Registers the selected skill files used by the Anthropic integration.
+    /// </summary>
     procedure LoadSkillsFiles(
       Ids: TArray<string>;
       Filenames: TArray<string>);
 
     procedure SkillCustomRegister;
 
+    /// <summary>
+    /// Best-effort fire-and-forget delete of every non-empty file_id
+    /// present in State.Files. Called once when the response arrives
+    /// (input files have been consumed) and once on chat-level failure
+    /// (a retry will re-upload anyway).
+    /// </summary>
+    procedure CleanupInputFiles(const State: TStateBuffer);
+
+    /// <summary>
+    /// Pure resolution of the local download paths from server-side
+    /// filenames: applies skill-derived default extension, ensures media
+    /// folder, runs CheckFilename to sanitize each candidate.
+    /// </summary>
+    function ResolveDownloadFilenames(
+      const Names: TArray<string>;
+      const State: TStateBuffer): TArray<string>;
+
+    /// <summary>
+    /// Dispatches the fire-and-forget download tasks. Wrapped in
+    /// try/except so a synchronous setup failure for one ID can't
+    /// re-enter the calling Then-body's except branch.
+    /// </summary>
+    procedure FireDownloads(const IDs, Filenames: TArray<string>);
+
+    /// <summary>
+    /// Finalizes the turn with fallback file names after download path resolution fails.
+    /// </summary>
+    procedure HandleResolveFallback(
+      const E: Exception;
+      const Value: TEventData;
+      var State: TStateBuffer;
+      const EmitGuard: IEmitGuard);
+
+    /// <summary>
+    /// Finalizes the turn with fallback file results after file retrieval fails.
+    /// </summary>
+    procedure HandleRetrieveFailure(
+      const E: Exception;
+      const Value: TEventData;
+      var State: TStateBuffer;
+      const EmitGuard: IEmitGuard);
+
+    /// <summary>
+    /// Finalizes the turn after chat cancellation or chat-level failure.
+    /// </summary>
+    procedure HandleChatError(
+      const E: Exception;
+      var State: TStateBuffer;
+      const EmitGuard: IEmitGuard);
+
   public
     constructor Create(const ABrowser: IPythiaBrowser; const AContext: IContext);
 
+    /// <summary>
+    /// Refreshes the Anthropic API key used by the demo service.
+    /// </summary>
     procedure UpdateApiKey;
 
+    /// <summary>
+    /// Starts the asynchronous Anthropic chat stream for the current Pythia turn.
+    /// </summary>
     procedure AsyncAwaitStreamChat(
       const AState: TInputPromptState;
       const AOnFinalize: TManagedItemFinalizeProc);
@@ -133,163 +209,203 @@ procedure TAnthropicServices.AsyncAwaitStreamChat(
 var
   JsonPayloadAsString: string;
 begin
-  {--- Main entry point for a streamed chat request. }
+  {--- AState belongs to the Pythia managed flow; async closures capture only State }
   var State := TStateBuffer.FromState(AState);
-
-  {--- Select model for "id":"textGeneration" (index 1) }
   State.Model := State.Models.Items[TEXT_GENERATION_INDEX].Model;
 
-  {--- Build and validate the Payload procedure before starting the stream.
-       The returned Payload is the fresh instance used by the SDK. }
-  var Payload := BuildAndCheckPayload(AState, State, JsonPayloadAsString);
+  var Payload := BuildAndCheckPayload(State, JsonPayloadAsString);
   State.JsonRequest := JsonPayloadAsString;
 
-  {--- Wire streaming callbacks to the browser/UI layer. }
   var SessionCallbacks := BuildSessionCallbacks(State);
 
-  {--- Normalize promise completion into one finalize contract. }
-  var Promise := FClient.Chat.AsyncAwaitCreateStream(Payload, SessionCallbacks);
+  {--- Only one completion path may finalize the turn. }
+  var EmitGuard: IEmitGuard := TEmitGuard.Create(AOnFinalize);
 
-  Promise
+  FClient.Chat.AsyncAwaitCreateStream(Payload, SessionCallbacks)
     .&Then(
       procedure (Value: TEventData)
       begin
-        {--- Normalize the raw streamed JSON before storing it in the turn state.
-             Downstream extractors and context replay rely on one valid JSON
-             event per line to recover file/container data and rebuild the
-             assistant context on subsequent turns. }
         State.JsonResponse := TAnthropicJsonResponseHelper.NormalizeJsonResponse(Value.RawJson);
-
+        CleanupInputFiles(State);
 
         if not TStateChecking.HasFileToDownload(State) then
           begin
-            TFinalizeData
-              .FromSuccess(Value, State)
-              .Emit(AOnFinalize);
+            EmitGuard.TryEmit(TFinalizeData.FromSuccess(Value, State));
             Exit;
           end;
 
-        {--- Resolve real filenames from the Files API before finalization, so the
-             UI receives server-issued names instead of JSON-stream heuristics.
-             Downloads are then fire-and-forget against those resolved paths. }
         var IDs := TArrayUtils.ArrayRemoveDuplicates(
           TAnthropicFileIdExtractor.ExtractBashCodeExecutionOutputs(State.JsonResponse));
 
         FClientUtils.WhenAllRetrieve(IDs)
           .&Then(
             procedure (Names: TArray<string>)
-            var
-              DefaultExt: string;
             begin
-              {--- Defensive: any exception thrown inside this body is silently
-                   swallowed by the promise framework (TPromise.&Then wraps the
-                   call in try/except → Reject), which routes us to &Catch with
-                   no traceable stack. Surface the real error explicitly. }
               try
-                if TStateChecking.HasSkills(State) then
-                  begin
-                    var Skills := State.Integration.Skills;
-                    DefaultExt := Skills[High(Skills)].Name;
-                  end
-                else
-                  DefaultExt := 'unknown';
-
-                var MediaFolder := FBrowser.GetMediaFolder;
-                if not TDirectory.Exists(MediaFolder) then
-                  TDirectory.CreateDirectory(MediaFolder);
-
-                var Resolved: TArray<string>;
-                SetLength(Resolved, Length(Names));
-                for var I := Low(Names) to High(Names) do
-                  begin
-                    var Candidate := Names[I].Trim;
-                    if Candidate.IsEmpty then
-                      Candidate := Format('File_Result.%s', [DefaultExt]);
-                    Resolved[I] := TParamsGetter.CheckFilename(Candidate, MediaFolder);
-                  end;
-
-                State.FileResults := Resolved;
-
-                TFinalizeData
-                  .FromSuccess(Value, State)
-                  .Emit(AOnFinalize);
-
-                for var I := Low(IDs) to High(IDs) do
-                  FClientUtils.AsyncDownloadAs(IDs[I], Resolved[I]);
-
+                State.FileResults := ResolveDownloadFilenames(Names, State);
+                EmitGuard.TryEmit(TFinalizeData.FromSuccess(Value, State));
+                FireDownloads(IDs, State.FileResults);
               except
                 on E: Exception do
-                  begin
-                    FBrowser.DisplayError(Format('Filename resolution failed: %s (%s)',
-                      [E.Message, E.ClassName]));
-                    State.FileResults := LoadFileResult(State, LoadSkillsFiles);
-                    TFinalizeData
-                      .FromSuccess(Value, State)
-                      .Emit(AOnFinalize);
-                  end;
+                  HandleResolveFallback(E, Value, State, EmitGuard);
               end;
             end)
           .&Catch(
             procedure (E: Exception)
             begin
-              {--- Reached only if WhenAllRetrieve itself rejects (a Files.Retrieve
-                   failed). Surface the cause and fall back to the legacy
-                   JSON-derived names so the workflow is never blocked. }
-              FBrowser.DisplayError(Format('Files.Retrieve failed: %s', [E.Message]));
-              State.FileResults := LoadFileResult(State, LoadSkillsFiles);
-              TFinalizeData
-                .FromSuccess(Value, State)
-                .Emit(AOnFinalize);
+              HandleRetrieveFailure(E, Value, State, EmitGuard);
             end);
       end)
     .&Catch(
       procedure (E: Exception)
       begin
-        if not E.Message.ToLowerInvariant.StartsWith(ABORTED_INDICATOR) then
-          begin
-            State.Error := True;
-            State.ErrorMessage := E.Message;
-
-            TFinalizeData
-              .FromException(E, State)
-              .Emit(AOnFinalize);
-            Exit;
-          end;
-
-        {--- Handle cancellation separately. }
-
-        var MessageContent := TMessageContentBuilder.Aborted(E.Message);
-
-        State.AddStreamedText(MessageContent);
-        FBrowser.Display(MessageContent, False);
-
-        TFinalizeData
-          .FromState(State)
-          .Emit(AOnFinalize);
+        CleanupInputFiles(State);
+        HandleChatError(E, State, EmitGuard);
       end);
 end;
 
+procedure TAnthropicServices.CleanupInputFiles(const State: TStateBuffer);
+var
+  FileIds: TArray<string>;
+begin
+  FileIds := [];
+  for var Item in State.Files do
+    if not Item.FileId.Trim.IsEmpty then
+      FileIds := FileIds + [Item.FileId];
+
+  if Length(FileIds) > 0 then
+    FClientUtils.AsyncDeleteAllFire(FileIds);
+end;
+
+function TAnthropicServices.ResolveDownloadFilenames(
+  const Names: TArray<string>;
+  const State: TStateBuffer): TArray<string>;
+var
+  DefaultExt: string;
+begin
+  {--- When the server-side filename is missing, use the active skill name as
+       the best available default extension for the generated file. }
+  if TStateChecking.HasSkills(State) then
+    begin
+      var Skills := State.Integration.Skills;
+      DefaultExt := Skills[High(Skills)].Name;
+    end
+  else
+    DefaultExt := 'unknown';
+
+  var MediaFolder := FBrowser.GetMediaFolder;
+  if not TDirectory.Exists(MediaFolder) then
+    TDirectory.CreateDirectory(MediaFolder);
+
+  SetLength(Result, Length(Names));
+  for var I := Low(Names) to High(Names) do
+    begin
+      var Candidate := Names[I].Trim;
+      if Candidate.IsEmpty then
+        Candidate := Format('File_Result.%s', [DefaultExt]);
+      Result[I] := TParamsGetter.CheckFilename(Candidate, MediaFolder);
+    end;
+end;
+
+procedure TAnthropicServices.FireDownloads(const IDs, Filenames: TArray<string>);
+begin
+  {--- Each download handles its own async failure path. This try/except only
+       guards synchronous dispatch errors so they cannot re-enter the parent
+       Then-body's exception branch. }
+  try
+    for var I := Low(IDs) to High(IDs) do
+      FClientUtils.AsyncDownloadAs(IDs[I], Filenames[I]);
+  except
+    on E: Exception do
+      FBrowser.DisplayError(Format('Async download dispatch failed: %s (%s)',
+        [E.Message, E.ClassName]));
+  end;
+end;
+
+procedure TAnthropicServices.HandleResolveFallback(
+  const E: Exception;
+  const Value: TEventData;
+  var State: TStateBuffer;
+  const EmitGuard: IEmitGuard);
+begin
+  {--- Filename resolution failed after file retrieval succeeded.
+       Fall back to JSON-derived file results so the turn can still finalize. }
+  FBrowser.DisplayError(Format('Filename resolution failed: %s (%s)',
+    [E.Message, E.ClassName]));
+
+  State.FileResults := LoadFileResult(State, LoadSkillsFiles);
+  EmitGuard.TryEmit(TFinalizeData.FromSuccess(Value, State));
+end;
+
+procedure TAnthropicServices.HandleRetrieveFailure(
+  const E: Exception;
+  const Value: TEventData;
+  var State: TStateBuffer;
+  const EmitGuard: IEmitGuard);
+begin
+  FBrowser.DisplayError(Format('Files.Retrieve failed: %s', [E.Message]));
+  try
+    State.FileResults := LoadFileResult(State, LoadSkillsFiles);
+    EmitGuard.TryEmit(TFinalizeData.FromSuccess(Value, State));
+  except
+    on EFallback: Exception do
+      begin
+        FBrowser.DisplayError(Format('Fallback finalize failed: %s (%s)',
+          [EFallback.Message, EFallback.ClassName]));
+        State.Error := True;
+        State.ErrorMessage := EFallback.Message;
+        EmitGuard.TryEmit(TFinalizeData.FromException(EFallback, State));
+      end;
+  end;
+end;
+
+procedure TAnthropicServices.HandleChatError(
+  const E: Exception;
+  var State: TStateBuffer;
+  const EmitGuard: IEmitGuard);
+begin
+  {--- User cancellation is not treated as a failed turn: the partial streamed
+       response is promoted to final content so the UI and history stay aligned. }
+  if not E.Message.ToLowerInvariant.StartsWith(ABORTED_INDICATOR) then
+    begin
+      State.Error := True;
+      State.ErrorMessage := E.Message;
+      EmitGuard.TryEmit(TFinalizeData.FromException(E, State));
+      Exit;
+    end;
+
+  var MessageContent := TMessageContentBuilder.Aborted(E.Message);
+  State.AddStreamedText(MessageContent);
+  FBrowser.Display(MessageContent, False);
+  EmitGuard.TryEmit(TFinalizeData.FromState(State));
+end;
+
+{ TEmitGuard }
+
+constructor TEmitGuard.Create(const AOnFinalize: TManagedItemFinalizeProc);
+begin
+  inherited Create;
+  FOnFinalize := AOnFinalize;
+  FEmitted := False;
+end;
+
+procedure TEmitGuard.TryEmit(const Data: TFinalizeData);
+begin
+  if FEmitted then
+    Exit;
+  FEmitted := True;
+  Data.Emit(FOnFinalize);
+end;
+
 function TAnthropicServices.BuildPayload(
-  const AState: TInputPromptState;
   State: TStateBuffer): TChatParamProc;
 var
   Effort: string;
 begin
-  {--- The request body is composed in two layers:
-
-         1. Conversation timeline. The current user content is materialized
-            from the input state, then handed to the injected IContext which
-            prepends the prior turns held by IPythiaBrowser.PersistentChat.
-            The result is the full TArray<TMessageParam> sent to the API.
-
-         2. Request parameters. Model, sampling, system prompt, tools and
-            thinking configuration are applied through the dedicated builders;
-            they remain orthogonal to history reconstruction. }
   var CurrentContent :=
-    Demo.Anthropic.Helpers.TMessageContentBuilder.BuildContentBlocks(AState);
+    Demo.Anthropic.Helpers.TMessageContentBuilder.BuildContentBlocks(State);
   var Messages := FContext.BuildMessages(State, CurrentContent);
 
-  {--- Build and snapshot the request payload. }
   Result :=
     procedure (Params: TChatParams)
     begin
@@ -364,16 +480,14 @@ procedure TAnthropicServices.BetaBuilder(
   BetaMCP: TArray<string>;
   const Params: TChatParams);
 begin
-  {--- Find the "beta" data already used in the context }
+  {--- Reuse beta flags already present in the conversation history, then merge
+       the flags required by the current skills, MCP servers, and Files API use. }
   var Beta := FContext.BetaExtract;
 
-  {--- Add, if necessary, the "beta" values identified for the construction of this query. }
   Beta := TArrayUtils.Merge(Beta, BetaSkill);
-
-  {--- Add, if necessary, the "beta" values identified for the construction of this query. }
   Beta := TArrayUtils.Merge(Beta, BetaMCP);
 
-  if TStateChecking.AdaptiveThinkingCheck(AState) then
+  if TStateChecking.HasAPIFileUsed(AState) then
     Beta := TArrayUtils.Merge(Beta, ['files-api-2025-04-14']);
 
   if Length(Beta) = 0 then
@@ -384,27 +498,20 @@ begin
 end;
 
 function TAnthropicServices.BuildAndCheckPayload(
-  const AState: TInputPromptState;
   State: TStateBuffer;
   out JsonPayloadAsString: string): TChatParamProc;
 begin
-  var Payload := BuildPayload(AState, State);
+  var Payload := BuildPayload(State);
 
-  {--- Validate Payload generation using a disposable instance }
   var JsonPayload := TChatParams.Create;
   try
-    {--- BuildPayload produces the Payload procedure ultimately used by the SDK.
-         Executing such a procedure is required to validate payload generation,
-         but it may consume its captured state or resources.
-
-         Therefore this first Payload instance is disposable and used only for
-         validation. A fresh instance is built afterwards and returned to the
-         caller. }
+    {--- Validate payload generation on a disposable TChatParams instance.
+         Return a fresh payload proc so the SDK gets an untouched builder. }
     Payload(JsonPayload);
 
     JsonPayloadAsString := JsonPayload.ToFormat();
 
-    Result := BuildPayload(AState, State);
+    Result := BuildPayload(State);
 
   finally
     JsonPayload.Free;
@@ -684,17 +791,8 @@ function TAnthropicServices.HistoricalCodeExecutionRequired: Boolean;
 const
   CODE_EXECUTION_BETA = 'code-execution-2025-08-25';
 begin
-  {--- Returns True when any prior turn of the current session opted into
-        the code-execution beta. BetaBuilder replays that beta on every
-        subsequent request via FContext.BetaExtract; the API requires the
-        matching code_execution tool to be re-registered alongside it,
-        otherwise it rejects the request with:
-
-          400 Skills beta requires the code_execution tool to be
-          included in the request.
-
-        Piggybacking on BetaExtract keeps the tool / beta pair in sync
-        through a single source of truth (the JsonPrompt of past turns). }
+  {--- If a previous turn used the code-execution beta, Anthropic expects the
+       code_execution tool to be registered again on later requests. }
   Result := False;
   if not Assigned(FContext) then
     Exit;
@@ -709,21 +807,12 @@ function TAnthropicServices.ToolsBuilder(const AState: TStateBuffer;
 begin
   Result := Self;
 
-  {--- Tool registration is gated on the union of two signals:
-
-         ● the current AState (user explicitly enabled web search, a skill
-           or an MCP server for this turn), and
-         ● the conversation history (a prior turn of the same session
-           already used the code-execution beta and the API now expects
-           the code_execution tool to remain registered for continuity).
-
-       The activation predicate is duplicated inline rather than reusing
-       TToolsBuilder.TryToBuild because that helper only consults the
-       current state and would short-circuit the historical path. }
+  {--- Tools are enabled from both the current turn and the conversation history:
+       historical code execution must remain registered for API continuity. }
   var WebSearchOn := AState.WebSearch;
   var SkillsOn    := TStateChecking.HasSkills(AState);
   var MCPOn       := TStateChecking.HasMCP(AState);
-  var CodeExecOn  := SkillsOn or HistoricalCodeExecutionRequired;
+  var CodeExecOn  := MCPOn or SkillsOn or HistoricalCodeExecutionRequired;
 
   if not (WebSearchOn or CodeExecOn or MCPOn) then
     Exit;
@@ -863,7 +952,7 @@ begin
     if I > 0 then
       Line := Line + #10 + StringArray[I];
 
-  Result := Line + Result + S_ABORTED;
+  Result := Line + S_ABORTED;
 end;
 
 end.
