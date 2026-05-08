@@ -16,6 +16,7 @@
 
 ## Table of Contents
 
+- [Changelog](docs/changelog.md)
 - [Get started in a few lines](#get-started-in-a-few-lines)
 - [What Pythia-Webview2 is](#what-pythia-webview2-is)
 - [Vendor-native by design](#vendor-native-by-design)

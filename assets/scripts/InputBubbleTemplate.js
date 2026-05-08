@@ -3173,20 +3173,69 @@
       horizontalSyncFrameId = requestAnimationFrame(tick);
     }
 
+    const INPUT_BUBBLE_RESERVE_GAP = 32;
+
+    function getInputBubbleBackdrop() {
+      let backdrop = document.getElementById("InputBubbleBackdrop");
+
+      if (!backdrop) {
+        backdrop = document.createElement("div");
+        backdrop.id = "InputBubbleBackdrop";
+        backdrop.setAttribute("aria-hidden", "true");
+        backdrop.hidden = true;
+        document.body.appendChild(backdrop);
+      }
+
+      return backdrop;
+    }
+
+    function clearInputBubbleReserve() {
+      document.documentElement.style.setProperty(
+        "--layout-input-bubble-reserve",
+        "0px"
+      );
+
+      const backdrop = getInputBubbleBackdrop();
+      backdrop.hidden = true;
+    }
+
+    function applyInputBubbleReserve() {
+      const measured = host.offsetHeight || 0;
+
+      if (measured <= 0) {
+        clearInputBubbleReserve();
+        return;
+      }
+
+      const reserve = Math.ceil(measured + INPUT_BUBBLE_RESERVE_GAP);
+
+      document.documentElement.style.setProperty(
+        "--layout-input-bubble-reserve",
+        reserve + "px"
+      );
+
+      const backdrop = getInputBubbleBackdrop();
+      backdrop.hidden = false;
+    }
+
     function setCenteredMode() {
+      host.dataset.bubbleMode = "centered";
       applyHorizontalLayout();
       host.style.top = "50%";
       host.style.bottom = "auto";
       host.style.transform = "translate(-50%, -50%)";
       updateWelcomeVisibility(true);
+      clearInputBubbleReserve();
     }
 
     function setBottomMode() {
+      host.dataset.bubbleMode = "bottom";
       applyHorizontalLayout();
       host.style.top = "auto";
       host.style.bottom = "24px";
       host.style.transform = "translateX(-50%)";
       updateWelcomeVisibility(false);
+      applyInputBubbleReserve();
     }
 
     window.updateInputBubbleLayout = function () {
@@ -3195,6 +3244,14 @@
       else
         setCenteredMode();
     };
+
+    const hostResizeObserver = new ResizeObserver(function () {
+      if (host.dataset.bubbleMode === "bottom") {
+        applyInputBubbleReserve();
+      }
+    });
+
+    hostResizeObserver.observe(host);
 
     const observer = new MutationObserver(function () {
       window.updateInputBubbleLayout && window.updateInputBubbleLayout();

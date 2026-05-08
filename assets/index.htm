@@ -129,6 +129,8 @@
   --layout-main-content-min-width: 360px;
   --layout-response-max-width: 850px;
 
+  --layout-input-bubble-reserve: 0px;
+
   --alert-note: #4493f8;
   --alert-tip: #3fb950;
   --alert-important: #ab7df8;
@@ -303,11 +305,36 @@ body::-webkit-scrollbar-thumb:hover {
     - var(--layout-page-padding)
   );
   max-width: var(--layout-response-max-width);
-  min-height: calc(100vh - var(--layout-page-padding) - var(--layout-page-padding));
+  min-height: calc(
+    100vh
+    - var(--layout-page-padding)
+    - var(--layout-page-padding)
+    - var(--layout-input-bubble-reserve, 0px)
+  );
   box-sizing: border-box;
 
   margin-left: auto;
   margin-right: auto;
+  margin-bottom: var(--layout-input-bubble-reserve, 0px);
+}
+
+#InputBubbleBackdrop {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--layout-input-bubble-reserve, 0px);
+
+  pointer-events: none;
+  user-select: none;
+
+  background: var(--bg-main);
+
+  z-index: 999;
+}
+
+#InputBubbleBackdrop[hidden] {
+  display: none !important;
 }
 
 #ResponseContentBatch {
@@ -1579,6 +1606,7 @@ a:active {
 
 <div id="ResponseContent"></div>
 <div id="ResponseContentBatch" aria-hidden="true"></div>
+<div id="InputBubbleBackdrop" aria-hidden="true" hidden></div>
 <div id="InputHost"></div>
 
 <script>
