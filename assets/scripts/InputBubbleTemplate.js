@@ -2269,7 +2269,7 @@
     systemPromptBtn.style.justifyContent = "center";
     systemPromptBtn.style.gap = "6px";
 
-    // IMPORTANT : casser le bouton carré imposé par styleButton
+    // IMPORTANT : break the square button imposed by styleButton
     systemPromptBtn.style.width = "auto";
     systemPromptBtn.style.minWidth = "0";
     systemPromptBtn.style.padding = "6px 12px";
@@ -2280,20 +2280,20 @@
     systemPromptBtn.style.borderRadius = "16px";
     systemPromptBtn.style.whiteSpace = "nowrap";
 
-    // icône
+    // icon
     const systemPromptIcon = document.createElement("span");
     systemPromptIcon.textContent = "\uE115";
     systemPromptIcon.style.fontFamily = "Segoe Fluent Icons";
-    systemPromptIcon.style.fontSize = "14px";   // taille réduite
+    systemPromptIcon.style.fontSize = "14px";
     systemPromptIcon.style.lineHeight = "1";
 
-    // texte
+    // text
     const systemPromptLabel = document.createElement("span");
     systemPromptLabel.textContent = "settings";
     systemPromptLabel.style.fontFamily = "Segoe UI, sans-serif";
     systemPromptLabel.style.fontSize = "13px";
 
-    // assemblage
+    // assembly
     systemPromptBtn.appendChild(systemPromptIcon);
     systemPromptBtn.appendChild(systemPromptLabel);
 
@@ -2320,7 +2320,7 @@
     modelBtn.style.justifyContent = "center";
     modelBtn.style.gap = "6px";
 
-    // IMPORTANT : casser le bouton carré imposé par styleButton
+    // IMPORTANT : break the square button imposed by styleButton
     modelBtn.style.width = "auto";
     modelBtn.style.minWidth = "0";
     modelBtn.style.padding = "6px 12px";
@@ -2331,20 +2331,20 @@
     modelBtn.style.borderRadius = "16px";
     modelBtn.style.whiteSpace = "nowrap";
 
-    // icône
+    // icon
     const modelIcon = document.createElement("span");
     modelIcon.textContent = "\uE7BE";
     modelIcon.style.fontFamily = "Segoe Fluent Icons";
     modelIcon.style.fontSize = "22px";
     modelIcon.style.lineHeight = "1";
 
-    // texte
+    // text
     const modelLabel = document.createElement("span");
     modelLabel.textContent = "model";
     modelLabel.style.fontFamily = "Segoe UI, sans-serif";
     modelLabel.style.fontSize = "13px";
 
-    // assemblage
+    // assembly
     modelBtn.appendChild(modelIcon);
     modelBtn.appendChild(modelLabel);
 

@@ -49,10 +49,356 @@
     attributeFilter: ["data-theme"]
   });
 
-  const streamed = %s;
-  const pairId = %s;
-  const reasoning = %s;
-  const md = %s;
+  function getDisplayTemplateRuntimeMount() {
+    if (
+      window.ResponseRenderBatch &&
+      typeof window.ResponseRenderBatch.getMount === "function"
+    ) {
+      const runtimeMount = window.ResponseRenderBatch.getMount();
+      if (runtimeMount) return runtimeMount;
+    }
+
+    return document.getElementById("ResponseContent") || document.body;
+  }
+
+  function getDisplayTemplateActiveBlock(mount) {
+    const targetMount = mount || getDisplayTemplateRuntimeMount();
+
+    if (
+      window.ResponseRenderBatch &&
+      typeof window.ResponseRenderBatch.getActiveStreamBlock === "function"
+    ) {
+      const activeBlock = window.ResponseRenderBatch.getActiveStreamBlock(targetMount);
+      if (activeBlock) return activeBlock;
+    }
+
+    if (targetMount && targetMount.children) {
+      for (const node of targetMount.children) {
+        if (node.nodeType === 1 && node.id === "assistant-stream-block") {
+          return node;
+        }
+      }
+    }
+
+    return targetMount && targetMount.lastElementChild
+      ? targetMount.lastElementChild
+      : null;
+  }
+
+  function getDisplayTemplateActiveThought() {
+    const mount = getDisplayTemplateRuntimeMount();
+    const block = getDisplayTemplateActiveBlock(mount);
+
+    if (block) {
+      const thought = block.querySelector(".thought-container");
+      if (thought) return thought;
+    }
+
+    const allThoughts =
+      mount && typeof mount.querySelectorAll === "function"
+        ? mount.querySelectorAll(".thought-container")
+        : [];
+
+    return allThoughts.length ? allThoughts[allThoughts.length - 1] : null;
+  }
+
+  function setDisplayTemplateReasoningOpen(open) {
+    const thought = getDisplayTemplateActiveThought();
+    if (!thought) return false;
+
+    thought.classList.toggle("open", !!open);
+    return true;
+  }
+
+  function toggleDisplayTemplateReasoning() {
+    const thought = getDisplayTemplateActiveThought();
+    if (!thought) return false;
+
+    thought.classList.toggle("open");
+    return thought.classList.contains("open");
+  }
+
+  window.DisplayTemplate = window.DisplayTemplate || {};
+
+  window.DisplayTemplate.setReasoningOpen = setDisplayTemplateReasoningOpen;
+  window.DisplayTemplate.expandReasoning = () => setDisplayTemplateReasoningOpen(true);
+  window.DisplayTemplate.collapseReasoning = () => setDisplayTemplateReasoningOpen(false);
+  window.DisplayTemplate.toggleReasoning = toggleDisplayTemplateReasoning;
+
+  const DISPLAY_STREAM_MIN_CHUNK = 3;
+
+  function cleanDisplayTemplatePairId(value) {
+    return String(value == null ? "" : value)
+      .replace(/^[\s\uFEFF\u200B\u200C\u200D\u2060\u00A0]+|[\s\uFEFF\u200B\u200C\u200D\u2060\u00A0]+$/g, "");
+  }
+
+  function cleanDisplayTemplateReasoning(value) {
+    return String(value || "")
+      .replace(/^[\uFEFF\u200B\u200C\u200D\u2060]+/, "")
+      .replace(/^\r+/, "");
+  }
+
+  function cleanDisplayTemplateMarkdown(value) {
+    return String(value)
+      .replace(/^[\uFEFF\u200B\u200C\u200D\u2060]+/, "")
+      .replace(/^\r+/, "");
+  }
+
+  function getDisplayStreamChunkSize(totalPending) {
+    if (totalPending > 4000) return 80;
+    if (totalPending > 1500) return 56;
+    if (totalPending > 600) return 32;
+    if (totalPending > 180) return 16;
+    if (totalPending > 80) return 8;
+    return DISPLAY_STREAM_MIN_CHUNK;
+  }
+
+  function takeDisplayStreamChunk(value, maxLength) {
+    const source = String(value || "");
+    if (!source) {
+      return { chunk: "", rest: "" };
+    }
+
+    if (source.length <= maxLength) {
+      return { chunk: source, rest: "" };
+    }
+
+    let end = Math.max(DISPLAY_STREAM_MIN_CHUNK, maxLength);
+
+    if (/[\uDC00-\uDFFF]/.test(source.charAt(end))) {
+      end += 1;
+    }
+
+    if (source.charAt(end - 1) === "\r" && source.charAt(end) === "\n") {
+      end += 1;
+    }
+
+    return {
+      chunk: source.slice(0, end),
+      rest: source.slice(end)
+    };
+  }
+
+  function getDisplayStreamQueues() {
+    window.__displayTemplateStreamQueues =
+      window.__displayTemplateStreamQueues || Object.create(null);
+
+    return window.__displayTemplateStreamQueues;
+  }
+
+  function getDisplayStreamQueue(pairIdClean) {
+    const queues = getDisplayStreamQueues();
+
+    queues[pairIdClean] =
+      queues[pairIdClean] || {
+        pairId: pairIdClean,
+        pendingReasoning: "",
+        pendingMd: "",
+        afterStreamTasks: [],
+        frameId: 0,
+        active: true
+      };
+
+    return queues[pairIdClean];
+  }
+
+  function displayStreamQueueIsPending(queue) {
+    return !!(
+      queue &&
+      queue.active &&
+      (
+        queue.frameId ||
+        queue.pendingReasoning.length ||
+        queue.pendingMd.length
+      )
+    );
+  }
+
+  function completeDisplayStreamQueue(queue) {
+    if (!queue) return;
+
+    const queues = getDisplayStreamQueues();
+    const tasks = Array.isArray(queue.afterStreamTasks)
+      ? queue.afterStreamTasks.splice(0)
+      : [];
+
+    queue.active = false;
+    queue.frameId = 0;
+    queue.pendingReasoning = "";
+    queue.pendingMd = "";
+
+    delete queues[queue.pairId];
+
+    tasks.forEach((task) => {
+      try {
+        task();
+      } catch (error) {
+        console.error("DisplayTemplate deferred task error:", error);
+      }
+    });
+  }
+
+  function requestDisplayStreamFrame(callback) {
+    if (typeof window.requestAnimationFrame === "function") {
+      return window.requestAnimationFrame(callback);
+    }
+
+    return window.setTimeout(callback, 16);
+  }
+
+  function cancelDisplayStreamFrame(frameId) {
+    if (!frameId) return;
+
+    if (typeof window.cancelAnimationFrame === "function") {
+      window.cancelAnimationFrame(frameId);
+      return;
+    }
+
+    window.clearTimeout(frameId);
+  }
+
+  function scheduleDisplayStreamQueue(queue) {
+    if (!queue || !queue.active || queue.frameId) return;
+
+    queue.frameId = requestDisplayStreamFrame(() => {
+      queue.frameId = 0;
+      drainDisplayStreamQueue(queue);
+    });
+  }
+
+  function drainDisplayStreamQueue(queue) {
+    if (!queue || !queue.active) return;
+
+    const totalPending = queue.pendingReasoning.length + queue.pendingMd.length;
+
+    if (!totalPending) {
+      completeDisplayStreamQueue(queue);
+      return;
+    }
+
+    const chunkSize = getDisplayStreamChunkSize(totalPending);
+    const reasoningPart = takeDisplayStreamChunk(queue.pendingReasoning, chunkSize);
+    const mdPart = takeDisplayStreamChunk(queue.pendingMd, chunkSize);
+
+    queue.pendingReasoning = reasoningPart.rest;
+    queue.pendingMd = mdPart.rest;
+
+    renderDisplay(true, queue.pairId, reasoningPart.chunk, mdPart.chunk, {
+      fromStreamQueue: true
+    });
+
+    if (queue.pendingReasoning.length || queue.pendingMd.length) {
+      scheduleDisplayStreamQueue(queue);
+    } else {
+      completeDisplayStreamQueue(queue);
+    }
+  }
+
+  function enqueueDisplayStream(streamed, pairId, reasoning, md) {
+    const pairIdClean = cleanDisplayTemplatePairId(pairId);
+
+    if (!pairIdClean) return false;
+
+    const queue = getDisplayStreamQueue(pairIdClean);
+
+    queue.active = true;
+    queue.pendingReasoning += cleanDisplayTemplateReasoning(reasoning);
+    queue.pendingMd += cleanDisplayTemplateMarkdown(md);
+
+    scheduleDisplayStreamQueue(queue);
+
+    return true;
+  }
+
+  function runAfterDisplayStreams(callback, pairId) {
+    if (typeof callback !== "function") return false;
+
+    const pairIdClean = cleanDisplayTemplatePairId(pairId);
+    const queues = getDisplayStreamQueues();
+
+    if (pairIdClean) {
+      const queue = queues[pairIdClean];
+
+      if (displayStreamQueueIsPending(queue)) {
+        queue.afterStreamTasks.push(callback);
+        return true;
+      }
+
+      callback();
+      return false;
+    }
+
+    const pendingQueues = Object.keys(queues)
+      .map((key) => queues[key])
+      .filter(displayStreamQueueIsPending);
+
+    if (!pendingQueues.length) {
+      callback();
+      return false;
+    }
+
+    let remaining = pendingQueues.length;
+
+    pendingQueues.forEach((queue) => {
+      queue.afterStreamTasks.push(() => {
+        remaining -= 1;
+        if (remaining === 0) {
+          callback();
+        }
+      });
+    });
+
+    return true;
+  }
+
+  function cancelDisplayStreamQueue(pairId) {
+    const pairIdClean = cleanDisplayTemplatePairId(pairId);
+    if (!pairIdClean) return false;
+
+    const queues = getDisplayStreamQueues();
+    const queue = queues[pairIdClean];
+
+    if (!queue) return false;
+
+    queue.active = false;
+    queue.pendingReasoning = "";
+    queue.pendingMd = "";
+    cancelDisplayStreamFrame(queue.frameId);
+    queue.frameId = 0;
+    delete queues[pairIdClean];
+
+    return true;
+  }
+
+  function cancelAllDisplayStreamQueues() {
+    const queues = getDisplayStreamQueues();
+
+    Object.keys(queues).forEach((pairId) => {
+      const queue = queues[pairId];
+
+      if (!queue) return;
+
+      queue.active = false;
+      queue.pendingReasoning = "";
+      queue.pendingMd = "";
+      cancelDisplayStreamFrame(queue.frameId);
+      queue.frameId = 0;
+      delete queues[pairId];
+    });
+
+    return true;
+  }
+
+  function display(streamed, pairId, reasoning, md) {
+    cancelDisplayStreamQueue(pairId);
+    return renderDisplay(false, pairId, reasoning, md);
+  }
+
+  function displayStream(streamed, pairId, reasoning, md) {
+    return enqueueDisplayStream(streamed, pairId, reasoning, md);
+  }
+
+  function renderDisplay(streamed, pairId, reasoning, md, options) {
 
   const isStreamCall =
     streamed === true ||
@@ -60,18 +406,19 @@
     streamed === 1 ||
     streamed === "1";
 
-  const pairIdClean = String(pairId == null ? "" : pairId)
-    .replace(/^[\s\uFEFF\u200B\u200C\u200D\u2060\u00A0]+|[\s\uFEFF\u200B\u200C\u200D\u2060\u00A0]+$/g, "");
+  const pairIdClean = cleanDisplayTemplatePairId(pairId);
 
   if (!pairIdClean) return;
 
-  const reasoningClean = String(reasoning || "")
-    .replace(/^[\uFEFF\u200B\u200C\u200D\u2060]+/, "")
-    .replace(/^\r+/, "");
+  const fromStreamQueue = !!(options && options.fromStreamQueue);
 
-  const mdClean = String(md)
-    .replace(/^[\uFEFF\u200B\u200C\u200D\u2060]+/, "")
-    .replace(/^\r+/, "");
+  const reasoningClean = fromStreamQueue
+    ? String(reasoning || "")
+    : cleanDisplayTemplateReasoning(reasoning);
+
+  const mdClean = fromStreamQueue
+    ? String(md || "")
+    : cleanDisplayTemplateMarkdown(md);
 
     const DISPLAY_TEMPLATE_I18N_EVENT =
     window.AppI18n && window.AppI18n.eventName
@@ -972,8 +1319,9 @@
   };
 
   const wasStreaming = block.dataset.streaming === "true";
+  const isStartingStream = isStreamCall && (!wasStreaming || isNewBlock);
 
-  if (isStreamCall && (!wasStreaming || isNewBlock)) {
+  if (isStartingStream) {
     block.__mdSource = "";
     block.__reasoningSource = "";
   }
@@ -1033,6 +1381,18 @@
     return response;
   };
 
+  const ensureStreamResponseContent = (targetResponse) => {
+    let content = targetResponse.querySelector(":scope > .assistant-response-stream-content");
+
+    if (!content) {
+      content = document.createElement("div");
+      content.className = "assistant-response-stream-content";
+      targetResponse.prepend(content);
+    }
+
+    return content;
+  };
+
   if (isStreamCall) {
     block.__reasoningSource = (block.__reasoningSource || "") + reasoningClean;
   } else {
@@ -1044,8 +1404,14 @@
   let response = ensureResponse(block);
 
   if (isStreamCall) {
+    if (isStartingStream) {
+      response.replaceChildren();
+    }
+
+    const streamContent = ensureStreamResponseContent(response);
+
     block.__mdSource = (block.__mdSource || "") + mdClean;
-    replaceRenderedHtml(response, buildHtml(block.__mdSource));
+    replaceRenderedHtml(streamContent, buildHtml(block.__mdSource));
   } else {
     block.__mdSource = mdClean;
 
@@ -2139,5 +2505,15 @@
   }
 
   applyDisplayTemplateDictionary(block);
+
+  }
+
+  window.DisplayTemplate = window.DisplayTemplate || {};
+  window.DisplayTemplate.display = display;
+  window.DisplayTemplate.displayStream = displayStream;
+  window.DisplayTemplate.runAfterStreams = runAfterDisplayStreams;
+  window.DisplayTemplate.cancelStreams = cancelAllDisplayStreamQueues;
+  window.display = display;
+  window.displayStream = displayStream;
 
 })();

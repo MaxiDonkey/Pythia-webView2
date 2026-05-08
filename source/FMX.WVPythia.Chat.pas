@@ -524,6 +524,7 @@ type
     procedure ClearCurrentChatSession;
     procedure ClearInternalBrowserData;
     procedure ClearMediaPlayer;
+    function DeferAfterDisplayStream(const Script: string; const PairId: Integer): string;
 
     function ExecuteTemplate(
       const Template: string;
@@ -1004,6 +1005,18 @@ begin
      FEventManager.SetServiceAdapter once the value is supplied. }
 end;
 
+function TInterfacedFMXPythia.DeferAfterDisplayStream(
+  const Script: string;
+  const PairId: Integer): string;
+begin
+  Result :=
+    Format(DEFER_AFTER_DISPLAY_STREAM, [
+      Script,
+      TEscapeHelper.EscapeJSString(PairId.ToString)
+    ]
+  );
+end;
+
 function TInterfacedFMXPythia.Display(
   const AText: string;
   const AThink: string;
@@ -1032,7 +1045,7 @@ begin
     ReasoningCollapse;
 
   Result := ExecuteScript(
-    Format(TemplateProvider.DisplayTemplate, [
+    Format(DISPLAY_TEMPLATE, [
       '"false"',
       TEscapeHelper.EscapeJSString(FPromptCount.ToString),
       TEscapeHelper.EscapeJSString(FStreamThink),
@@ -1093,9 +1106,13 @@ begin
 end;
 
 function TInterfacedFMXPythia.DisplaySpacer(const AHeight: Integer): Boolean;
+var
+  Script: string;
 begin
+  Script := Format(SPACER_TEMPLATE, [AHeight]);
+
   Result := ExecuteScript(
-    Format(SPACER_TEMPLATE, [AHeight])
+    DeferAfterDisplayStream(Script, FPromptCount)
   );
 end;
 
@@ -1132,7 +1149,7 @@ begin
     end;
 
   Result := ExecuteScript(
-    Format(TemplateProvider.DisplayTemplate, [
+    Format(DISPLAY_STREAM_TEMPLATE, [
       'true',
       TEscapeHelper.EscapeJSString(FPromptCount.ToString),
       TEscapeHelper.EscapeJSString(AThink),
@@ -1175,6 +1192,7 @@ function TInterfacedFMXPythia.ExecuteTemplate(
 var
   EscapedItems: TArray<string>;
   index: Integer;
+  Script: string;
 begin
   SetLength(EscapedItems, Length(Value));
   for var i := 0 to High(Value) do
@@ -1192,23 +1210,29 @@ begin
   if Align.IsEmpty then
     begin
       // Files
-      Result := ExecuteScript(
-        Format(Template, [
-          AttachedData,
-          index.ToString
-        ])
-      );
+      Script := Format(Template, [
+        AttachedData,
+        index.ToString
+      ]);
+
+      if not isPromptSource then
+        Script := DeferAfterDisplayStream(Script, index);
+
+      Result := ExecuteScript(Script);
       Exit;
     end;
 
   // Images
-  Result := ExecuteScript(
-    Format(Template, [
-      AttachedData,
-      Align,
-      index.ToString
-    ])
-  );
+  Script := Format(Template, [
+    AttachedData,
+    Align,
+    index.ToString
+  ]);
+
+  if not isPromptSource then
+    Script := DeferAfterDisplayStream(Script, index);
+
+  Result := ExecuteScript(Script);
 end;
 
 function TInterfacedFMXPythia.Display(const AText: string; Scroll: Boolean): Boolean;
@@ -1368,14 +1392,18 @@ begin
 end;
 
 function TInterfacedFMXPythia.SetChatFooter(const Text: string): Boolean;
+var
+  Script: string;
 begin
+  Script := Format(TemplateProvider.ChatFooterTemplate, [
+     TEscapeHelper.EscapeJSString(Text),
+     TEscapeHelper.EscapeJSString(FPromptCount.ToString),
+     CHAT_FOOTER_FONT_SIZE,
+     CHAT_FOOTER_COLOR
+  ]);
+
   Result := ExecuteScript(
-    Format(TemplateProvider.ChatFooterTemplate, [
-       TEscapeHelper.EscapeJSString(Text),
-       TEscapeHelper.EscapeJSString(FPromptCount.ToString),
-       CHAT_FOOTER_FONT_SIZE,
-       CHAT_FOOTER_COLOR
-    ])
+    DeferAfterDisplayStream(Script, FPromptCount)
   );
 end;
 
@@ -1561,6 +1589,7 @@ begin
   ExecuteScript(TemplateProvider.InputBubbleTemplate);
   ExecuteScript(TemplateProvider.ScrollButtonsTemplate);
   ExecuteScript(TemplateProvider.PromptSummaryTemplate);
+  ExecuteScript(TemplateProvider.DisplayTemplate);
   ExecuteScript(TemplateProvider.ImagesTemplate);
   ExecuteScript(TemplateProvider.PromptFileTemplate);
   ExecuteScript(TemplateProvider.AudioTemplate);

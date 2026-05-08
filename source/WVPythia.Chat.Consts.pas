@@ -57,6 +57,9 @@ const
 
   CLEAR_TEMPLATE =
     '(function(){' +
+    '  if (window.DisplayTemplate && typeof window.DisplayTemplate.cancelStreams === ''function'') {' +
+    '    window.DisplayTemplate.cancelStreams();' +
+    '  }' +
     '  if (window.ResponseRenderBatch && typeof window.ResponseRenderBatch.cancel === ''function'') {' +
     '    window.ResponseRenderBatch.cancel();' +
     '  }' +
@@ -75,6 +78,20 @@ const
 
   HIDE_REASONING_TEMPLATE =
     '(() => { const el = document.getElementById("loadingBubble"); if (el) el.remove(); })();';
+
+  DISPLAY_TEMPLATE =
+    'window.display(%s, %s, %s, %s);';
+
+  DEFER_AFTER_DISPLAY_STREAM =
+    '(function(){' +
+    'const run=function(){%s};' +
+    'if(window.DisplayTemplate&&typeof window.DisplayTemplate.runAfterStreams==="function"){' +
+    'window.DisplayTemplate.runAfterStreams(run, %s);return;}' +
+    'run();' +
+    '})();';
+
+  DISPLAY_STREAM_TEMPLATE =
+    'window.displayStream(%s, %s, %s, %s);';
 
   INPUT_BUBBLE_RESET_TEMPLATE =
     'window.resetInputBubble();';
