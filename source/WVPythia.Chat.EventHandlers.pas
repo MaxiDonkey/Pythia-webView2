@@ -1297,6 +1297,10 @@ begin
 
   var ID := FReader.AsString(PROP_ID);
 
+  if Assigned(FPersistentChat.CurrentChat) then
+    if SameText(FPersistentChat.CurrentChat.Id, ID) then
+      Exit(False);
+
   Result := FPersistentChat.ActivateChatById(Id);
   if not Result then
     Exit(False);
