@@ -1,5 +1,5 @@
 # Pythia-Webview2 for Delphi
-![Version](https://img.shields.io/badge/version-0.9.0-blue)
+![Version](https://img.shields.io/badge/version-0.9.1-blue)
 ![Status](https://img.shields.io/badge/status-first%20public%20release-2ea44f)
 ![Delphi](https://img.shields.io/badge/Delphi-11%2F12%2F13-ffffba)
 ![Platform](https://img.shields.io/badge/platform-Windows%20only-0078D4?logo=windows&logoColor=white)
