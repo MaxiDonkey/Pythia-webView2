@@ -16,6 +16,28 @@
 >
 > Without these three pieces, the command will either fail to find the picker template or the user's selection will silently never reach Delphi.
 
+<br>
+
+## Sommaire
+
+- [1. Why a `/grep` command?](#1-why-a-grep-command)
+- [2. Position in the plugin examples](#2-position-in-the-plugin-examples)
+- [3. What this command demonstrates](#3-what-this-command-demonstrates)
+- [4. Installation](#4-installation)
+- [5. Command surface](#5-command-surface)
+- [6. Central workflow: collect, pick, inject](#6-central-workflow-collect-pick-inject)
+- [7. The picker UI](#7-the-picker-ui)
+- [8. Command behavior by action](#8-command-behavior-by-action)
+- [9. Naming, paths, and validation](#9-naming-paths-and-validation)
+- [10. Search scope and limits](#10-search-scope-and-limits)
+- [11. Encoding handling](#11-encoding-handling)
+- [12. Custom-event payload schema](#12-custom-event-payload-schema)
+- [13. Common errors](#13-common-errors)
+- [14. Suggested walkthrough](#14-suggested-walkthrough)
+- [15. What the developer should observe](#15-what-the-developer-should-observe)
+- [16. Limits and possible extensions](#16-limits-and-possible-extensions)
+- [17. Summary](#17-summary)
+
 ___
 
 <br>

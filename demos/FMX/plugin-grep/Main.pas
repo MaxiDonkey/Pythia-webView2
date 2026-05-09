@@ -40,7 +40,7 @@ uses
 
 procedure TForm1.DisplayDocumentation;
 begin
-  var Filename := '..\docs\grep-command-documentation.md';
+  var Filename := '..\demos\FMX\plugin-grep\README.md';
   if not FileExists(Filename) then
     begin
       Pythia.DisplayWarning(Format('Documentation file not found: `%s`', [Filename]));

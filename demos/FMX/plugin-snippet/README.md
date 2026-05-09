@@ -10,6 +10,28 @@
 > The `/snippet` command is available only when the corresponding plugin is installed and loaded by the host application.  
 > Without this plugin, the command is not interpreted by Pythia-webview2 and should be considered unavailable in the runtime environment.
 
+<br>
+
+## Sommaire
+
+- [1. Why a `/snippet` command?](#1-why-a-snippet-command)
+- [2. What this command demonstrates](#2-what-this-command-demonstrates)
+- [3. Command surface](#3-command-surface)
+- [4. Progressive discovery](#4-progressive-discovery)
+- [5. Common point of confusion: `review` and `tldr` are independent](#5-common-point-of-confusion-review-and-tldr-are-independent)
+- [6. Naming and normalization](#6-naming-and-normalization)
+- [7. Content handling](#7-content-handling)
+- [8. Snippet size](#8-snippet-size)
+- [9. Persistence](#9-persistence)
+- [10. Rename and delete](#10-rename-and-delete)
+- [11. Export / import](#11-export--import)
+- [12. Degraded import](#12-degraded-import)
+- [13. Command registry validation](#13-command-registry-validation)
+- [14. Suggested walkthrough](#14-suggested-walkthrough)
+- [15. What the developer should observe](#15-what-the-developer-should-observe)
+- [16. Limits and possible extensions](#16-limits-and-possible-extensions)
+- [17. Summary](#17-summary)
+
 ___
 
 <br>

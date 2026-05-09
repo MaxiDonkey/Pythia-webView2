@@ -12,6 +12,35 @@
 > It also requires a configured Git working directory and a `git` executable available from the process `PATH`.  
 > Without this plugin, the command is not interpreted by Pythia-webview2 and should be considered unavailable in the runtime environment.
 
+<br>
+
+## Sommaire
+
+- [1. Why a `/git` command?](#1-why-a-git-command)
+- [2. Position in the plugin examples](#2-position-in-the-plugin-examples)
+- [3. What this command demonstrates](#3-what-this-command-demonstrates)
+- [4. Command surface](#4-command-surface)
+- [5. Central workflow: collect, edit, send](#5-central-workflow-collect-edit-send)
+- [6. Command behavior by category](#6-command-behavior-by-category)
+- [7. Formatting of injected context](#7-formatting-of-injected-context)
+- [8. Preparing a small demo repository](#8-preparing-a-small-demo-repository)
+- [9. Progressive discovery](#9-progressive-discovery)
+- [10. Suggested walkthrough](#10-suggested-walkthrough)
+- [11. Safety model](#11-safety-model)
+- [12. External process execution](#12-external-process-execution)
+- [13. Encoding and Git configuration](#13-encoding-and-git-configuration)
+- [14. Output size and truncation](#14-output-size-and-truncation)
+- [15. Empty output](#15-empty-output)
+- [16. Error handling](#16-error-handling)
+- [17. Command registry validation](#17-command-registry-validation)
+- [18. Degraded scenarios](#18-degraded-scenarios)
+- [19. Host wiring note](#19-host-wiring-note)
+- [20. Code organization](#20-code-organization)
+- [21. What the developer should observe](#21-what-the-developer-should-observe)
+- [22. What the user should observe](#22-what-the-user-should-observe)
+- [23. Limits and possible extensions](#23-limits-and-possible-extensions)
+- [24. Summary](#24-summary)
+
 ___
 
 <br>

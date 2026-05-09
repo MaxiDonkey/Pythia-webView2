@@ -41,7 +41,7 @@ uses
 
 procedure TForm1.DisplayDocumentation;
 begin
-  var Filename := '..\docs\snippet-command-documentation.md';
+  var Filename := '..\demos\FMX\plugin-snippet\README.md';
   if not FileExists(Filename) then
     begin
       Pythia.DisplayWarning(Format('Documentation file not found: `%s`', [Filename]));
