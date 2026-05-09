@@ -198,9 +198,9 @@ Custom slash commands that extend the chat with host-side logic. Each plugin shi
 
 |Project|Folder|Command|Documentation|
 |-|-|-|-|
-|`PythiaSnippetDemo`|[`demos/FMX/plugin-snippet`](demos/FMX/plugin-snippet)|`/snippet`|[Local prompt library](docs/snippet-command-documentation.md)|
-|`PythiaGitDemo`|[`demos/FMX/plugin-git`](demos/FMX/plugin-git)|`/git`|[Git context collector](docs/git-command-documentation.md)|
-|`PythiaGrepDemo`|[`demos/FMX/plugin-grep`](demos/FMX/plugin-grep)|`/grep`|[Interactive code-context picker](docs/grep-command-documentation.md)|
+|`PythiaSnippetDemo`|[`demos/FMX/plugin-snippet`](demos/FMX/plugin-snippet)|`/snippet`|[Local prompt library](demos/FMX/plugin-snippet/README.md)|
+|`PythiaGitDemo`|[`demos/FMX/plugin-git`](demos/FMX/plugin-git)|`/git`|[Git context collector](demos/FMX/plugin-git/README.md)|
+|`PythiaGrepDemo`|[`demos/FMX/plugin-grep`](demos/FMX/plugin-grep)|`/grep`|[Interactive code-context picker](demos/FMX/plugin-grep/README.md)|
 
 These demos do not try to demonstrate a fake universal LLM API.
 
