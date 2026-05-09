@@ -21,7 +21,7 @@ uses
   uWVLoader, uWVBrowserBase, uWVFMXBrowser, uWVTypeLibrary, uWVTypes,
   uWVFMXCoreInit, uWVFMXHost,
 
-  FMX.WVPythia.OpenDialog,
+  FMX.WVPythia.OpenDialog, WVPythia.Clipboard.FMX,
   Windows.Process.Execution, Windows.ApiKey.Management;
 
 const
@@ -135,7 +135,15 @@ type
     property WindowParent: TLayout read FWindowParent;
   end;
 
-  TFMXPythiaCapabilitiesManager = class(TFMXPythiaCore)
+  TFMXPythiaClipboard = class(TFMXPythiaCore)
+    FClipboard: IClipboardReader;
+    function GetClipboard: IClipboardReader;
+    procedure SetClipboard(const Value: IClipboardReader);
+  public
+    constructor Create(AOwner: TComponent); override;
+  end;
+
+  TFMXPythiaCapabilitiesManager = class(TFMXPythiaClipboard)
   private
     FCapabilities: ICapabilities;
     procedure SaveDefaultCapabilitiesFile;
@@ -3090,6 +3098,24 @@ end;
 class procedure TFMXAlphaBlend.ShowWindow(const Form: TForm);
 begin
   SetWindowAlpha(Form, 255);
+end;
+
+{ TFMXPythiaClipboard }
+
+constructor TFMXPythiaClipboard.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FClipboard := TFmxClipboardReader.Create;
+end;
+
+function TFMXPythiaClipboard.GetClipboard: IClipboardReader;
+begin
+  Result := FClipboard;
+end;
+
+procedure TFMXPythiaClipboard.SetClipboard(const Value: IClipboardReader);
+begin
+  FClipboard := Value;
 end;
 
 end.

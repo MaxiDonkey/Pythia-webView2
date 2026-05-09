@@ -6,6 +6,25 @@ uses
   System.SysUtils, WVPythia.Types, WVPythia.ChatSession.Controller, WVPythia.Command.Parser;
 
 type
+  TClipboardTextKind = (
+    ctkInline,
+    ctkTempFile
+  );
+
+  TClipboardTextData = record
+    Kind: TClipboardTextKind;
+    Text: string;
+    FileName: string;
+  end;
+
+  IClipboardReader = interface
+    ['{5EE91EF1-87FD-4544-95AB-D863F4DB7742}']
+    function IsAvailable: Boolean;
+    function TryGetText(out AText: TClipboardTextData): Boolean;
+    function TrySaveImageToTempPng(out AFileName: string): Boolean;
+    function TryGetFiles(out AFiles: TArray<string>): Boolean;
+  end;
+
   ISecretStore = interface
     ['{0828CA5A-491F-41E5-B127-9037F22CCF79}']
     function ReadSecret(const Name: string; out Value: string; const ParamProc: TProc<string> = nil): Boolean;
@@ -117,6 +136,8 @@ type
     ['{B6D390AF-CEFB-436A-9560-6BACCC390F25}']
 
     //setters et getters
+    function GetClipboard: IClipboardReader;
+    procedure SetClipboard(const Value: IClipboardReader);
     function GetScrollButtonsVisible: Boolean;
     procedure SetScrollButtonsVisible(const Value: Boolean);
     function GetSettingsPanelPage: Integer;
@@ -321,6 +342,7 @@ type
       const AKey: string;
       const Hidden: Boolean = False): Boolean; overload;
 
+    property Clipboard: IClipboardReader read GetClipboard write SetClipboard;
     property PromptCount: Integer read GetPromptCount write SetPromptCount;
     property Locked: Boolean read GetLocked write SetLocked;
     property Escape: Boolean read GetEscape write SetEscape;

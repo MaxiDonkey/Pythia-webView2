@@ -134,6 +134,8 @@ type
   end;
 
   TBrowserEventHandlers = class(TSettingsEventHandler)
+  private
+    function ClampSelection(const AValue, AMaxValue: Integer): Integer;
   protected
     function CanHandleEvents: Boolean; virtual;
 
@@ -196,6 +198,7 @@ type
 
     function CustomEvent: Boolean;
     function FileDropInEvent: Boolean;
+    function PasteFromClipboardEvent: Boolean;
   end;
 
 implementation
@@ -390,6 +393,18 @@ end;
 function TBrowserEventHandlers.ChatSelectionEvent: Boolean;
 begin
   Result := ChatSessionSelection;
+end;
+
+function TBrowserEventHandlers.ClampSelection(const AValue,
+  AMaxValue: Integer): Integer;
+begin
+  if AValue < 0 then
+      Exit(0);
+
+  if AValue > AMaxValue then
+    Exit(AMaxValue);
+
+  Result := AValue;
 end;
 
 function TBrowserEventHandlers.CodeCopyEvent: Boolean;
@@ -588,6 +603,60 @@ begin
   Result := OpenManagedItemDialogEvent(
     TAdapterManagedItemKind.Skills,
     INTEGRATION_SKILL_SELECTION
+  );
+end;
+
+function TBrowserEventHandlers.PasteFromClipboardEvent: Boolean;
+begin
+  Result := False;
+
+  if not Assigned(FBrowser) then
+    Exit;
+
+  var Clipboard := FBrowser.Clipboard;
+  if not Assigned(Clipboard) then
+    Exit;
+
+  if not Clipboard.IsAvailable then
+    Exit;
+
+  var Files: TArray<string>;
+  if Clipboard.TryGetFiles(Files) and (Length(Files) > 0) then
+    Exit(AttachFilesToInput(Files, TOpenFileTarget.Documents));
+
+  var ImageFileName: string;
+  if Clipboard.TrySaveImageToTempPng(ImageFileName) then
+    Exit(AttachFilesToInput([ImageFileName], TOpenFileTarget.Images));
+
+  var TextData: TClipboardTextData;
+  if not Clipboard.TryGetText(TextData) then
+    Exit;
+
+  if TextData.Kind = ctkTempFile then
+    Exit(AttachFilesToInput([TextData.FileName], TOpenFileTarget.Documents));
+
+  var Prompt := FReader.AsString('prompt');
+  var SelectionStart := FReader.AsInteger('selectionStart', 0);
+  var SelectionEnd := FReader.AsInteger('selectionEnd', SelectionStart);
+  var PromptLength := Length(Prompt);
+
+  SelectionStart := ClampSelection(SelectionStart, PromptLength);
+  SelectionEnd := ClampSelection(SelectionEnd, PromptLength);
+
+  if SelectionStart > SelectionEnd then
+    begin
+      var Swap := SelectionStart;
+      SelectionStart := SelectionEnd;
+      SelectionEnd := Swap;
+    end;
+
+  var UpdatedPrompt :=
+    System.Copy(Prompt, 1, SelectionStart) +
+    TextData.Text +
+    System.Copy(Prompt, SelectionEnd + 1, MaxInt);
+
+  Result := FBrowser.BubbleInputSetText(
+    TEscapeHelper.EscapeJSString(UpdatedPrompt, False)
   );
 end;
 

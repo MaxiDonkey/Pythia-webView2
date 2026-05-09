@@ -18,7 +18,7 @@ uses
 
   uWVLoader, uWVBrowser, uWVWindowParent, uWVTypeLibrary,
 
-  VCL.WVPythia.OpenDialog,
+  VCL.WVPythia.OpenDialog, WVPythia.Clipboard.VCL,
   Windows.Process.Execution, Windows.ApiKey.Management;
 
 const
@@ -124,7 +124,16 @@ type
     property WindowParent: TWVWindowParent read FWindowParent;
   end;
 
-  TVCLPythiaCapabilitiesManager = class(TVCLPythiaCore)
+  TVCLPythiaClipboard = class(TVCLPythiaCore)
+  private
+    FClipboard: IClipboardReader;
+    function GetClipboard: IClipboardReader;
+    procedure SetClipboard(const Value: IClipboardReader);
+  public
+    constructor Create(AOwner: TComponent); override;
+  end;
+
+  TVCLPythiaCapabilitiesManager = class(TVCLPythiaClipboard)
   private
     FCapabilities: ICapabilities;
     procedure SaveDefaultCapabilitiesFile;
@@ -3041,6 +3050,24 @@ begin
       if not FileExists(Item) then
         raise EVCLPythiaException.CreateFmt('%s: file not found', [Item]);
     end;
+end;
+
+{ TVCLPythiaClipboard }
+
+constructor TVCLPythiaClipboard.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FClipboard := TVclClipboardReader.Create;
+end;
+
+function TVCLPythiaClipboard.GetClipboard: IClipboardReader;
+begin
+  Result := FClipboard;
+end;
+
+procedure TVCLPythiaClipboard.SetClipboard(const Value: IClipboardReader);
+begin
+  FClipboard := Value;
 end;
 
 initialization

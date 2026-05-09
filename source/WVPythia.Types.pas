@@ -69,7 +69,8 @@ type
     CardSelectionDialogSelectionChanged,
     InputString,
     CustomEvent,
-    FileDropIn
+    FileDropIn,
+    PasteFromClipboard
   );
 
   TBrowserChatEventHelper = record Helper for TBrowserChatEvent
@@ -114,7 +115,8 @@ type
       'card-selection-dialog-selection-changed',
       'input-string',
       'custom-event',
-      'file-drop-in'
+      'file-drop-in',
+      'paste-from-clipboard'
     );
   public
     class function Parse(const Value: string): TBrowserChatEvent; static; inline;

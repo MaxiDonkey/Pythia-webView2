@@ -350,6 +350,7 @@ begin
   FDispatch[TBrowserChatEvent.InputString] := InputString;
   FDispatch[TBrowserChatEvent.CustomEvent] := CustomEvent;
   FDispatch[TBrowserChatEvent.FileDropIn] := FileDropInEvent;
+  FDispatch[TBrowserChatEvent.PasteFromClipboard] := PasteFromClipboardEvent;
 end;
 
 procedure TBrowserEventManager.SetBrowser(const Value: IPythiaBrowser);

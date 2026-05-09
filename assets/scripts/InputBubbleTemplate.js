@@ -1067,6 +1067,114 @@
       textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + "px";
     }
 
+    const INPUT_HISTORY_LIMIT = 120;
+
+    function clampInputIndex(value) {
+      const max = textarea.value.length;
+      const n = Number(value);
+
+      if (!Number.isFinite(n) || n < 0)
+        return 0;
+
+      if (n > max)
+        return max;
+
+      return n;
+    }
+
+    function getInputSnapshot() {
+      return {
+        value: textarea.value || "",
+        selectionStart: clampInputIndex(textarea.selectionStart || 0),
+        selectionEnd: clampInputIndex(textarea.selectionEnd || 0)
+      };
+    }
+
+    function sameInputSnapshot(a, b) {
+      return !!a && !!b &&
+        a.value === b.value &&
+        a.selectionStart === b.selectionStart &&
+        a.selectionEnd === b.selectionEnd;
+    }
+
+    function pushInputUndo(snapshot) {
+      if (!host.__inputHistory)
+        host.__inputHistory = { undo: [], redo: [], applying: false };
+
+      const undo = host.__inputHistory.undo;
+      if (undo.length > 0 && sameInputSnapshot(undo[undo.length - 1], snapshot))
+        return;
+
+      undo.push(snapshot);
+      if (undo.length > INPUT_HISTORY_LIMIT)
+        undo.shift();
+    }
+
+    function rememberInputBeforeChange() {
+      if (!host.__inputHistory)
+        host.__inputHistory = { undo: [], redo: [], applying: false };
+
+      if (host.__inputHistory.applying)
+        return;
+
+      pushInputUndo(getInputSnapshot());
+      host.__inputHistory.redo = [];
+    }
+
+    function restoreInputSnapshot(snapshot) {
+      if (!snapshot)
+        return false;
+
+      if (!host.__inputHistory)
+        host.__inputHistory = { undo: [], redo: [], applying: false };
+
+      host.__inputHistory.applying = true;
+      textarea.value = snapshot.value || "";
+      autoResizeTextarea();
+
+      const start = clampInputIndex(snapshot.selectionStart || 0);
+      const end = clampInputIndex(snapshot.selectionEnd || start);
+      textarea.setSelectionRange(start, end);
+      host.__inputHistory.applying = false;
+
+      return true;
+    }
+
+    function undoInputChange() {
+      if (!host.__inputHistory || host.__inputHistory.undo.length === 0)
+        return false;
+
+      const current = getInputSnapshot();
+      const previous = host.__inputHistory.undo.pop();
+
+      if (!sameInputSnapshot(current, previous))
+        host.__inputHistory.redo.push(current);
+
+      return restoreInputSnapshot(previous);
+    }
+
+    function redoInputChange() {
+      if (!host.__inputHistory || host.__inputHistory.redo.length === 0)
+        return false;
+
+      pushInputUndo(getInputSnapshot());
+      return restoreInputSnapshot(host.__inputHistory.redo.pop());
+    }
+
+    function clearInputHistory() {
+      host.__inputHistory = { undo: [], redo: [], applying: false };
+    }
+
+    function setInputValue(value, recordHistory) {
+      const nextValue = value == null ? "" : String(value);
+
+      if (recordHistory !== false && textarea.value !== nextValue)
+        rememberInputBeforeChange();
+
+      textarea.value = nextValue;
+      autoResizeTextarea();
+    }
+
     function getWheelScrollableContainer(startNode) {
       if (!(startNode instanceof Element)) {
         return null;
@@ -1135,9 +1243,59 @@
       target.scrollTop += e.deltaY;
     }
 
+    textarea.addEventListener("beforeinput", function (event) {
+      if (event.inputType === "historyUndo") {
+        if (undoInputChange())
+          event.preventDefault();
+        return;
+      }
+
+      if (event.inputType === "historyRedo") {
+        if (redoInputChange())
+          event.preventDefault();
+        return;
+      }
+
+      rememberInputBeforeChange();
+    });
+
     textarea.addEventListener("input", autoResizeTextarea);
 
+    textarea.addEventListener("paste", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (!window.chrome || !window.chrome.webview)
+        return;
+
+      window.chrome.webview.postMessage({
+        event: "paste-from-clipboard",
+        prompt: textarea.value || "",
+        selectionStart: textarea.selectionStart || 0,
+        selectionEnd: textarea.selectionEnd || 0
+      });
+    });
+
     textarea.addEventListener("keydown", function (e) {
+      const key = String(e.key || "").toLowerCase();
+
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && key === "z") {
+        const handled = e.shiftKey ? redoInputChange() : undoInputChange();
+        if (handled) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && key === "y") {
+        if (redoInputChange()) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
+
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         sendBtn.click();
@@ -2017,10 +2175,7 @@
     };
 
     window.setInputBubbleText = function (text) {
-      const value = text == null ? "" : String(text);
-
-      textarea.value = value;
-      autoResizeTextarea();
+      setInputValue(text, true);
     };
 
     window.setInputBubbleFocus = function () {
@@ -2084,8 +2239,8 @@
     };
 
     window.partialResetInputBubble = function () {
-      textarea.value = "";
-      autoResizeTextarea();
+      setInputValue("", false);
+      clearInputHistory();
 
       clearEndpoint();
 
@@ -3601,6 +3756,7 @@
     applyInputBubbleDictionary();
     autoResizeTextarea();
     applySendButtonStateUI();
+    clearInputHistory();
     render();
     window.updateInputBubbleLayout && window.updateInputBubbleLayout();
 
@@ -3617,6 +3773,8 @@
       textarea.value = "";
       textarea.style.height = "auto";
     }
+
+    host.__inputHistory = { undo: [], redo: [], applying: false };
 
     host.__features.clear();
     host.__files = [];
