@@ -151,7 +151,7 @@ type
 implementation
 
 uses
-  System.Generics.Collections, System.Generics.Defaults;
+  System.Generics.Collections, System.Generics.Defaults, WVPythia.Net.MediaCodec;
 
 { TMessageContentBuilder }
 
@@ -175,7 +175,25 @@ class procedure TMessageContentBuilder.AppendDocumentBlock(
   const AFullPath: string;
   const AFileId: string;
   var ABlocks: TArray<TContentBlockParam>);
+var
+  LMimeType: string;
 begin
+  if TMediaCodec.TryResolveMimeTypeAsText(AFullPath, LMimeType) then
+    begin
+      {--- Plain text files are injected directly into the document block.
+           This avoids unnecessary encoding and allows the model to consume
+           the textual content without an extra decoding step. }
+      var Block := TDocumentBlockParam.New
+        .Source(
+          TPlainTextSource.New
+            .Data(TFileIOHelper.LoadFromFile(AFullPath))
+            .MediaType('text/plain')
+        );
+
+      ABlocks := ABlocks + [Block];
+      Exit;
+    end;
+
   {--- Document handling depends on the MIME type detected locally.
        This method acts as the dispatch point between the formats actually
        supported by the Anthropic payload built here. }
@@ -195,23 +213,6 @@ begin
 
       ABlocks := ABlocks + [Block];
       Exit;
-    end;
-
-  if SameText(MimeType, 'text/plain') or
-     SameText(MimeType, 'application/octet-stream') or
-     SameText(MimeType, 'text/html') then  //markdown file
-    begin
-      {--- Plain text files are injected directly into the document block.
-           This avoids unnecessary encoding and allows the model to consume
-           the textual content without an extra decoding step. }
-      var Block := TDocumentBlockParam.New
-        .Source(
-          TPlainTextSource.New
-            .Data(TFileIOHelper.LoadFromFile(AFullPath))
-            .MediaType('text/plain')
-        );
-
-      ABlocks := ABlocks + [Block];
     end;
 
   if SameText(MimeType, 'application/zip') or

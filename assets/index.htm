@@ -146,6 +146,13 @@
   --floating-controls-right-gap: 0px;
   --prompt-summary-btn-width: 24px;
   --prompt-summary-panel-gap: 8px;
+
+  --input-file-drop-dash-color: rgb(65,65,65);
+  --input-file-drop-dash-length: 40px;
+  --input-file-drop-dash-thickness: 3px;
+  --input-file-drop-dash-gap: 28px;
+  --input-file-drop-dash-repeat: calc(var(--input-file-drop-dash-length) + var(--input-file-drop-dash-gap));
+  --input-file-drop-background: rgba(255,255,255,0.04);
 }
 
 /* LIGHT THEME */
@@ -238,6 +245,8 @@
   --inline-code-text: var(--text-main);
   --inline-code-plain-text: #d86b6b;
   --inline-code-border: rgba(27,31,35,0.10);
+
+  --input-file-drop-dash-color: rgb(90,90,90);
 }
 
 /* ===================================================== */
@@ -262,6 +271,58 @@ body {
   color: var(--text-main);
 
   transition: padding-left 180ms ease;
+}
+
+#InputFileDropZone {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 100vw;
+  height: 100vh;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 0;
+  background:
+    linear-gradient(var(--input-file-drop-dash-color), var(--input-file-drop-dash-color))
+      top left / var(--input-file-drop-dash-length) var(--input-file-drop-dash-thickness) no-repeat,
+    linear-gradient(var(--input-file-drop-dash-color), var(--input-file-drop-dash-color))
+      top left / var(--input-file-drop-dash-thickness) var(--input-file-drop-dash-length) no-repeat,
+    linear-gradient(var(--input-file-drop-dash-color), var(--input-file-drop-dash-color))
+      top right / var(--input-file-drop-dash-length) var(--input-file-drop-dash-thickness) no-repeat,
+    linear-gradient(var(--input-file-drop-dash-color), var(--input-file-drop-dash-color))
+      top right / var(--input-file-drop-dash-thickness) var(--input-file-drop-dash-length) no-repeat,
+    linear-gradient(var(--input-file-drop-dash-color), var(--input-file-drop-dash-color))
+      bottom left / var(--input-file-drop-dash-length) var(--input-file-drop-dash-thickness) no-repeat,
+    linear-gradient(var(--input-file-drop-dash-color), var(--input-file-drop-dash-color))
+      bottom left / var(--input-file-drop-dash-thickness) var(--input-file-drop-dash-length) no-repeat,
+    linear-gradient(var(--input-file-drop-dash-color), var(--input-file-drop-dash-color))
+      bottom right / var(--input-file-drop-dash-length) var(--input-file-drop-dash-thickness) no-repeat,
+    linear-gradient(var(--input-file-drop-dash-color), var(--input-file-drop-dash-color))
+      bottom right / var(--input-file-drop-dash-thickness) var(--input-file-drop-dash-length) no-repeat,
+    linear-gradient(90deg,
+      var(--input-file-drop-dash-color) 0 var(--input-file-drop-dash-length),
+      transparent var(--input-file-drop-dash-length) var(--input-file-drop-dash-repeat))
+      top left / var(--input-file-drop-dash-repeat) var(--input-file-drop-dash-thickness) repeat-x,
+    linear-gradient(90deg,
+      var(--input-file-drop-dash-color) 0 var(--input-file-drop-dash-length),
+      transparent var(--input-file-drop-dash-length) var(--input-file-drop-dash-repeat))
+      bottom left / var(--input-file-drop-dash-repeat) var(--input-file-drop-dash-thickness) repeat-x,
+    linear-gradient(180deg,
+      var(--input-file-drop-dash-color) 0 var(--input-file-drop-dash-length),
+      transparent var(--input-file-drop-dash-length) var(--input-file-drop-dash-repeat))
+      top left / var(--input-file-drop-dash-thickness) var(--input-file-drop-dash-repeat) repeat-y,
+    linear-gradient(180deg,
+      var(--input-file-drop-dash-color) 0 var(--input-file-drop-dash-length),
+      transparent var(--input-file-drop-dash-length) var(--input-file-drop-dash-repeat))
+      top right / var(--input-file-drop-dash-thickness) var(--input-file-drop-dash-repeat) repeat-y,
+    var(--input-file-drop-background);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 3000;
+  transition: opacity 120ms ease;
 }
 
 html,

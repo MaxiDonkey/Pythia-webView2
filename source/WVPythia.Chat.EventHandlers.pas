@@ -74,6 +74,9 @@ type
     procedure SavePersistentChatAfterDeletion;
     function HasStringNodes(const AProps: TArray<string>): Boolean;
   protected
+    function AttachFilesToInput(
+      const APaths: TArray<string>;
+      const ATarget: TOpenFileTarget): Boolean;
     function ConfirmationResponse: Boolean;
     function OpenFileDialog: Boolean;
     function OpenManagedItemDialog(
@@ -192,6 +195,7 @@ type
     function InputString: Boolean;
 
     function CustomEvent: Boolean;
+    function FileDropInEvent: Boolean;
   end;
 
 implementation
@@ -418,6 +422,19 @@ end;
 function TBrowserEventHandlers.DisplayFileClickEvent: Boolean;
 begin
   Result := OpenFile;
+end;
+
+function TBrowserEventHandlers.FileDropInEvent: Boolean;
+begin
+  var Files := FReader.ArrayStrings('filenames');
+  if Length(Files) = 0 then
+    Exit(False);
+
+  var Target := TOpenFileTarget.Documents;
+  if FReader.IsStringNode(PROP_TARGET) then
+    Target := TOpenFileTarget.Parse(FReader.AsString(PROP_TARGET));
+
+  Result := AttachFilesToInput(Files, Target);
 end;
 
 function TBrowserEventHandlers.FileRemovedEvent: Boolean;
@@ -1088,6 +1105,38 @@ end;
 
 { TDialogConfirmationEventHandler }
 
+function TDialogConfirmationEventHandler.AttachFilesToInput(
+  const APaths: TArray<string>;
+  const ATarget: TOpenFileTarget): Boolean;
+begin
+  Result := False;
+
+  if not Assigned(FBrowser) then
+    Exit;
+
+  var UploadService := FBrowser.FileUploadService;
+
+  for var Item in APaths do
+    begin
+      var Path := Item.Trim;
+
+      if Path.IsEmpty then
+        Continue;
+
+      FBrowser.ExecuteScript(
+        Format(FILES_SELECTION_TEMPLATE, [
+          TEscapeHelper.EscapeJSString(Path),
+          TEscapeHelper.EscapeJSString(ATarget.ToString)])
+      );
+
+      if Assigned(UploadService) and
+         UploadService.ShouldHandle(Path, ATarget) then
+        UploadService.SubmitForUpload(Path, ATarget, nil);
+
+      Result := True;
+    end;
+end;
+
 function TDialogConfirmationEventHandler.ConfirmationResponse: Boolean;
 begin
   if FReader.AsBoolean(PROP_VALUE) = False then
@@ -1178,27 +1227,9 @@ begin
 
   if FOpenDialog.Execute(Filter, FilterIndex, SelectedPaths) then
     begin
-      {--- Resolve the optional upload service once per dialog. When the host
-           bootstrap registered an IFileUploadService, every selected file
-           that ShouldHandle accepts is also routed through SubmitForUpload.
-           The inline JS notification still happens unconditionally so the
-           compose box continues to render the bubble immediately, regardless
-           of whether the file is also being uploaded in the background. }
-      var UploadService := FBrowser.FileUploadService;
-
-      {--- Each selected path is pushed individually into the browser input model. }
-      for var Item in SelectedPaths.Split([#10]) do
-        begin
-          FBrowser.ExecuteScript(
-            Format(FILES_SELECTION_TEMPLATE, [
-              TEscapeHelper.EscapeJSString(Item),
-              TEscapeHelper.EscapeJSString(Target.ToString)])
-          );
-
-          if Assigned(UploadService) and
-             UploadService.ShouldHandle(Item, Target) then
-            UploadService.SubmitForUpload(Item, Target, nil);
-        end;
+      {--- Each selected path is pushed individually into the browser input
+           model and, when applicable, routed through the upload service. }
+      AttachFilesToInput(SelectedPaths.Split([#10]), Target);
     end;
 end;
 

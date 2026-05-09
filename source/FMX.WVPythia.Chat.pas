@@ -660,7 +660,7 @@ type
 implementation
 
 uses
-  Pythia.Webview2, WVPythia.JSON.SafeReader;
+  Pythia.Webview2, WVPythia.JSON.SafeReader, WVPythia.WebView2.DropFiles;
 
 {$REGION 'Dev notes'}
 
@@ -1708,6 +1708,10 @@ begin
 
       Initialize;
     end;
+
+  var EnrichedJson: string;
+  if TWebView2DropFiles.TryBuildFileDropInJson(rawJson, aArgs, EnrichedJson) then
+    rawJson := EnrichedJson;
 
   {--- Forward all regular browser-side events to the centralized JSON dispatcher. }
   FEventManager.Aggregate(rawJson);

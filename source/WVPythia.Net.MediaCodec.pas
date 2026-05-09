@@ -19,6 +19,40 @@ type
     class function ResolveMimeType(const FilePath: string): string; static;
 
     /// <summary>
+    /// Normalizes a MIME type by removing parameters and lower-casing it.
+    /// </summary>
+    class function NormalizeMimeType(const MimeType: string): string; static;
+
+    /// <summary>
+    /// Reads the beginning of a local file without loading it entirely in memory.
+    /// </summary>
+    class function TryReadFilePrefix(const FilePath: string; const MaxBytes: Integer;
+      out Bytes: TBytes): Boolean; static;
+
+    /// <summary>
+    /// Checks whether a byte sequence starts with the specified prefix.
+    /// </summary>
+    class function BytesStartWith(const Bytes: TBytes;
+      const Prefix: array of Byte): Boolean; static;
+
+    /// <summary>
+    /// Heuristically checks whether a byte sample is textual.
+    /// </summary>
+    class function BytesLookLikeText(const Bytes: TBytes): Boolean; static;
+
+    /// <summary>
+    /// Decodes a byte sample for lightweight textual format detection.
+    /// </summary>
+    class function TryDecodeTextPrefix(const Bytes: TBytes;
+      out Text: string): Boolean; static;
+
+    /// <summary>
+    /// Detects a more specific textual MIME type from textual content when possible.
+    /// </summary>
+    class function DetectTextMimeTypeFromPrefix(const FilePath, FallbackMimeType,
+      TextPrefix: string): string; static;
+
+    /// <summary>
     /// Removes all CR and LF characters from a string.
     /// </summary>
     class function StripCrlf(const Value: string): string; static;
@@ -165,6 +199,17 @@ type
     /// Gets the MIME type of a local file or remote URL.
     /// </summary>
     class function GetMimeType(const FileLocation: string): string; static;
+
+    /// <summary>
+    /// Determines whether a MIME type denotes textual content.
+    /// </summary>
+    class function IsTextualMimeType(const MimeType: string): Boolean; static;
+
+    /// <summary>
+    /// Resolves the MIME type of a local file only if its actual content is textual.
+    /// </summary>
+    class function TryResolveMimeTypeAsText(const FilePath: string;
+      out MimeType: string): Boolean; static;
 
     /// <summary>
     /// Gets the size of a local file in bytes.
@@ -445,6 +490,136 @@ end;
 
 { TMediaCodec  }
 
+class function TMediaCodec.BytesLookLikeText(const Bytes: TBytes): Boolean;
+var
+  I: Integer;
+  B: Byte;
+  ZeroCount: Integer;
+  OddZeroCount: Integer;
+  EvenZeroCount: Integer;
+  ControlCount: Integer;
+begin
+  if Length(Bytes) = 0 then
+    Exit(True);
+
+  if BytesStartWith(Bytes, [$EF, $BB, $BF]) or
+     BytesStartWith(Bytes, [$FF, $FE]) or
+     BytesStartWith(Bytes, [$FE, $FF]) then
+    Exit(True);
+
+  ZeroCount := 0;
+  OddZeroCount := 0;
+  EvenZeroCount := 0;
+  ControlCount := 0;
+
+  for I := 0 to High(Bytes) do
+  begin
+    B := Bytes[I];
+
+    if B = 0 then
+    begin
+      Inc(ZeroCount);
+
+      if Odd(I) then
+        Inc(OddZeroCount)
+      else
+        Inc(EvenZeroCount);
+
+      Continue;
+    end;
+
+    if (B < 32) and
+       not ((B = 9) or (B = 10) or (B = 12) or (B = 13) or (B = 26)) then
+      Inc(ControlCount);
+  end;
+
+  // UTF-16 without BOM: many zero bytes on the same byte lane.
+  if (Length(Bytes) >= 8) and
+     ((OddZeroCount > Length(Bytes) div 4) or
+      (EvenZeroCount > Length(Bytes) div 4)) then
+    Exit(True);
+
+  // Other NUL bytes are a strong binary signal.
+  if ZeroCount > 0 then
+    Exit(False);
+
+  // Accept normal text controls: tab, LF, FF, CR, EOF marker.
+  Result := (ControlCount * 100) <= (Length(Bytes) * 5);
+end;
+
+class function TMediaCodec.BytesStartWith(const Bytes: TBytes;
+  const Prefix: array of Byte): Boolean;
+var
+  I: Integer;
+begin
+  if Length(Bytes) < Length(Prefix) then
+    Exit(False);
+
+  for I := 0 to High(Prefix) do
+    if Bytes[I] <> Prefix[I] then
+      Exit(False);
+
+  Result := True;
+end;
+
+class function TMediaCodec.DetectTextMimeTypeFromPrefix(const FilePath,
+  FallbackMimeType, TextPrefix: string): string;
+var
+  S: string;
+  Lower: string;
+  Ext: string;
+begin
+  Result := NormalizeMimeType(FallbackMimeType);
+
+  if IsTextualMimeType(Result) then
+    Exit;
+
+  S := TextPrefix.TrimLeft;
+
+  if S.IsEmpty then
+    Exit('text/plain');
+
+  if S[1] = #$FEFF then
+    S := S.Substring(1).TrimLeft;
+
+  Lower := S.ToLower;
+  Ext := LowerCase(ExtractFileExt(FilePath));
+
+  if Lower.StartsWith('<!doctype html') or
+     Lower.StartsWith('<html') or
+     Lower.StartsWith('<html ') then
+    Exit('text/html');
+
+  if Lower.StartsWith('<?xml') then
+    Exit('application/xml');
+
+  if ((Ext = '.xml') or (Ext = '.xsd') or (Ext = '.xsl') or
+      (Ext = '.xslt') or (Ext = '.svg')) and
+     Lower.StartsWith('<') and Lower.Contains('>') then
+    Exit('application/xml');
+
+  if ((Ext = '.json') or (Ext = '.map')) and
+     (Lower.StartsWith('{') or Lower.StartsWith('[')) then
+    Exit('application/json');
+
+  if ((Ext = '.htm') or (Ext = '.html')) and
+     Lower.StartsWith('<') and Lower.Contains('>') then
+    Exit('text/html');
+
+  if ((Ext = '.dot') or (Ext = '.gv')) and
+     (Lower.StartsWith('digraph ') or
+      Lower.StartsWith('digraph{') or
+      Lower.StartsWith('graph ') or
+      Lower.StartsWith('graph{') or
+      Lower.StartsWith('strict digraph ') or
+      Lower.StartsWith('strict digraph{') or
+      Lower.StartsWith('strict graph ') or
+      Lower.StartsWith('strict graph{')) then
+    Exit('text/vnd.graphviz');
+
+  Result := 'text/plain';
+end;
+
 class function TMediaCodec.DecodeBase64ToBytes(
   const Base64: string): TBytes;
 begin
@@ -643,6 +818,40 @@ begin
   end;
 end;
 
+class function TMediaCodec.IsTextualMimeType(const MimeType: string): Boolean;
+var
+  M: string;
+begin
+  M := NormalizeMimeType(MimeType);
+
+  if M.IsEmpty then
+    Exit(False);
+
+  if M.StartsWith('text/') then
+    Exit(True);
+
+  if M.EndsWith('+xml') or
+     M.EndsWith('+json') or
+     M.EndsWith('+yaml') then
+    Exit(True);
+
+  Result :=
+    SameText(M, 'application/xml') or
+    SameText(M, 'application/json') or
+    SameText(M, 'application/yaml') or
+    SameText(M, 'application/x-yaml') or
+    SameText(M, 'application/javascript') or
+    SameText(M, 'application/ecmascript') or
+    SameText(M, 'application/x-javascript') or
+    SameText(M, 'application/x-www-form-urlencoded') or
+    SameText(M, 'application/sql') or
+    SameText(M, 'application/graphql') or
+    SameText(M, 'application/toml') or
+    SameText(M, 'application/x-toml') or
+    SameText(M, 'application/rtf') or
+    SameText(M, 'application/vnd.chipnuts.karaoke-mmd');
+end;
+
 class function TMediaCodec.IsUri(const FilePath: string): Boolean;
 begin
   var Lower := FilePath.ToLower;
@@ -657,6 +866,115 @@ begin
     Exit(StripCrlf(Value));
 
   Result := Value;
+end;
+
+class function TMediaCodec.NormalizeMimeType(const MimeType: string): string;
+var
+  P: Integer;
+begin
+  Result := MimeType.Trim;
+
+  P := Pos(';', Result);
+  if P > 0 then
+    Result := Copy(Result, 1, P - 1).Trim;
+
+  Result := Result.ToLower;
+end;
+
+class function TMediaCodec.TryDecodeTextPrefix(const Bytes: TBytes;
+  out Text: string): Boolean;
+begin
+  Text := EmptyStr;
+
+  try
+    if Length(Bytes) = 0 then
+      Exit(True);
+
+    if BytesStartWith(Bytes, [$EF, $BB, $BF]) then
+      Text := TEncoding.UTF8.GetString(Bytes, 3, Length(Bytes) - 3)
+    else if BytesStartWith(Bytes, [$FF, $FE]) then
+      Text := TEncoding.Unicode.GetString(Bytes, 2, Length(Bytes) - 2)
+    else if BytesStartWith(Bytes, [$FE, $FF]) then
+      Text := TEncoding.BigEndianUnicode.GetString(Bytes, 2, Length(Bytes) - 2)
+    else
+      Text := TEncoding.UTF8.GetString(Bytes);
+
+    Result := True;
+  except
+    Text := EmptyStr;
+    Result := False;
+  end;
+end;
+
+class function TMediaCodec.TryReadFilePrefix(const FilePath: string;
+  const MaxBytes: Integer; out Bytes: TBytes): Boolean;
+var
+  Stream: TFileStream;
+  Count: Integer;
+begin
+  Result := False;
+  Bytes := nil;
+
+  if (MaxBytes <= 0) or not TFile.Exists(FilePath) then
+    Exit;
+
+  try
+    Stream := TFileStream.Create(FilePath, fmOpenRead or fmShareDenyNone);
+    try
+      if Stream.Size <= 0 then
+      begin
+        Bytes := nil;
+        Exit(True);
+      end;
+
+      if Stream.Size > MaxBytes then
+        Count := MaxBytes
+      else
+        Count := Integer(Stream.Size);
+
+      SetLength(Bytes, Count);
+
+      if Count > 0 then
+        Stream.ReadBuffer(Bytes[0], Count);
+
+      Result := True;
+    finally
+      Stream.Free;
+    end;
+  except
+    Bytes := nil;
+    Result := False;
+  end;
+end;
+
+class function TMediaCodec.TryResolveMimeTypeAsText(const FilePath: string;
+  out MimeType: string): Boolean;
+const
+  TextProbeMaxBytes = 64 * 1024;
+var
+  Bytes: TBytes;
+  TextPrefix: string;
+  ResolvedMimeType: string;
+begin
+  Result := False;
+  MimeType := EmptyStr;
+
+  if not TFile.Exists(FilePath) then
+    Exit;
+
+  ResolvedMimeType := NormalizeMimeType(ResolveMimeType(FilePath));
+
+  if not TryReadFilePrefix(FilePath, TextProbeMaxBytes, Bytes) then
+    Exit;
+
+  if not BytesLookLikeText(Bytes) then
+    Exit;
+
+  if not TryDecodeTextPrefix(Bytes, TextPrefix) then
+    Exit;
+
+  MimeType := DetectTextMimeTypeFromPrefix(FilePath, ResolvedMimeType, TextPrefix);
+  Result := IsTextualMimeType(MimeType);
 end;
 
 class function TMediaCodec.ResolveMimeType(

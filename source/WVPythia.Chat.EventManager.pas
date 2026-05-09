@@ -349,6 +349,7 @@ begin
   FDispatch[TBrowserChatEvent.AudioInput] := AudioInputEvent;
   FDispatch[TBrowserChatEvent.InputString] := InputString;
   FDispatch[TBrowserChatEvent.CustomEvent] := CustomEvent;
+  FDispatch[TBrowserChatEvent.FileDropIn] := FileDropInEvent;
 end;
 
 procedure TBrowserEventManager.SetBrowser(const Value: IPythiaBrowser);

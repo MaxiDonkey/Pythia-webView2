@@ -109,6 +109,7 @@ type
     FTimer: TTimer;
     FDefaultLangage: Boolean;
     function GetLocalHost: string;
+    function GetBrowser: TWVBrowser;
   protected
     FOnBrowserCreated: TProc;
     procedure CreateMappingFolder;
@@ -118,7 +119,7 @@ type
   public
     constructor Create(AOwner: TComponent); override;
     function Update: Boolean;
-    property Browser: TWVBrowser read FBrowser;
+    property Browser: TWVBrowser read GetBrowser;
     property LocalHost: string read GetLocalHost;
     property WindowParent: TWVWindowParent read FWindowParent;
   end;
@@ -645,7 +646,7 @@ type
 implementation
 
 uses
-  Pythia.Webview2, WVPythia.JSON.SafeReader;
+  Pythia.Webview2, WVPythia.JSON.SafeReader, WVPythia.WebView2.DropFiles;
 
 {$REGION 'Dev notes'}
 
@@ -1521,6 +1522,11 @@ begin
     Result := True;
 end;
 
+function TVCLPythiaCore.GetBrowser: TWVBrowser;
+begin
+  Result := FBrowser;
+end;
+
 function TVCLPythiaCore.GetLocalHost: string;
 begin
   Result := LOCAL_HOST;
@@ -1685,6 +1691,10 @@ begin
 
       Initialize;
     end;
+
+  var EnrichedJson: string;
+  if TWebView2DropFiles.TryBuildFileDropInJson(rawJson, aArgs, EnrichedJson) then
+    rawJson := EnrichedJson;
 
   {--- Forward all regular browser-side events to the centralized JSON dispatcher. }
   FEventManager.Aggregate(rawJson);

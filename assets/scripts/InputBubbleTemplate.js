@@ -2,6 +2,7 @@
 
   const INPUT_HOST_ID = "InputHost";
   const RESPONSE_HOST_ID = "ResponseContent";
+  const FILES_DRAWER_ROOT_ID = "__delphi_left_dock_root__";
   const MAX_LINES = 8;
 
   function ensureInputBubble() {
@@ -527,6 +528,332 @@
     document.body.appendChild(fileInput);
     document.body.appendChild(knowledgeInput);
     document.body.appendChild(imageInput);
+
+    const fileDropZone = document.createElement("div");
+    fileDropZone.id = "InputFileDropZone";
+    fileDropZone.setAttribute("aria-hidden", "true");
+
+    Object.assign(fileDropZone.style, {
+      display: "none",
+      opacity: "0",
+      pointerEvents: "none"
+    });
+
+    document.body.appendChild(fileDropZone);
+
+    let fileDropZoneHideTimer = 0;
+
+    function getFileDropZoneBounds() {
+      const viewportWidth =
+        window.innerWidth ||
+        document.documentElement.clientWidth ||
+        0;
+
+      let left = 0;
+
+      const drawer = document.getElementById(FILES_DRAWER_ROOT_ID);
+      if (drawer) {
+        const rect = drawer.getBoundingClientRect();
+
+        if (rect && rect.width > 0 && rect.right > 0) {
+          left = Math.min(
+            viewportWidth,
+            Math.max(0, Math.round(rect.right))
+          );
+        }
+      }
+
+      return {
+        left: left,
+        width: Math.max(0, viewportWidth - left)
+      };
+    }
+
+    function applyFileDropZoneBounds() {
+      const bounds = getFileDropZoneBounds();
+
+      fileDropZone.style.left = bounds.left + "px";
+      fileDropZone.style.width = bounds.width + "px";
+    }
+
+    function hasDraggedFiles(event) {
+      const dataTransfer = event && event.dataTransfer;
+      if (!dataTransfer) return false;
+
+      const types = dataTransfer.types;
+      if (types) {
+        if (typeof types.contains === "function" && types.contains("Files"))
+          return true;
+
+        if (typeof types.includes === "function" && types.includes("Files"))
+          return true;
+
+        for (let i = 0; i < types.length; i++) {
+          if (types[i] === "Files")
+            return true;
+        }
+      }
+
+      if (dataTransfer.items) {
+        for (let i = 0; i < dataTransfer.items.length; i++) {
+          if (dataTransfer.items[i].kind === "file")
+            return true;
+        }
+      }
+
+      return !!(dataTransfer.files && dataTransfer.files.length > 0);
+    }
+
+    function showFileDropZone() {
+      window.clearTimeout(fileDropZoneHideTimer);
+      applyFileDropZoneBounds();
+
+      if (fileDropZone.style.display !== "flex") {
+        fileDropZone.style.opacity = "0";
+        fileDropZone.style.display = "flex";
+      }
+
+      fileDropZone.style.pointerEvents = "auto";
+      fileDropZone.getBoundingClientRect();
+      fileDropZone.style.opacity = "1";
+    }
+
+    function hideFileDropZone() {
+      window.clearTimeout(fileDropZoneHideTimer);
+
+      fileDropZone.style.opacity = "0";
+      fileDropZone.style.pointerEvents = "none";
+
+      fileDropZoneHideTimer = window.setTimeout(function () {
+        if (fileDropZone.style.opacity === "0")
+          fileDropZone.style.display = "none";
+      }, 130);
+    }
+
+    function normalizeDroppedPath(value) {
+      if (!value) return "";
+
+      let path = String(value).trim();
+      if (!path) return "";
+
+      if (path.indexOf("file:") === 0) {
+        try {
+          const url = new URL(path);
+
+          if (url.protocol === "file:") {
+            if (url.host) {
+              path = "\\\\" + url.host + decodeURIComponent(url.pathname);
+            } else {
+              path = decodeURIComponent(url.pathname).replace(/^\/([A-Za-z]:)/, "$1");
+            }
+          }
+        } catch (_) {
+          try {
+            path = decodeURI(path.replace(/^file:\/\/\/?/, ""));
+          } catch (__) {
+            path = path.replace(/^file:\/\/\/?/, "");
+          }
+        }
+      }
+
+      return path.replace(/\//g, "\\");
+    }
+
+    function isLocalDroppedPath(value) {
+      if (!value) return false;
+
+      const path = String(value).trim();
+
+      return (
+        /^[A-Za-z]:[\\\/]/.test(path) ||
+        /^\\\\/.test(path) ||
+        path.indexOf("file:") === 0
+      );
+    }
+
+    function getDroppedFilePath(file) {
+      if (!file) return "";
+
+      const path = normalizeDroppedPath(
+        file.path ||
+        file.fullPath ||
+        file.mozFullPath ||
+        file.webkitRelativePath
+      );
+
+      return isLocalDroppedPath(path) ? path : "";
+    }
+
+    function getDroppedUriListPaths(dataTransfer) {
+      if (!dataTransfer || typeof dataTransfer.getData !== "function")
+        return [];
+
+      try {
+        return String(dataTransfer.getData("text/uri-list") || "")
+          .split(/\r?\n/)
+          .map(function (line) { return line.trim(); })
+          .filter(function (line) { return line && line.charAt(0) !== "#"; })
+          .map(normalizeDroppedPath)
+          .filter(isLocalDroppedPath)
+          .filter(Boolean);
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function getDroppedTextPaths(dataTransfer) {
+      if (!dataTransfer || typeof dataTransfer.getData !== "function")
+        return [];
+
+      const formats = ["text/plain", "Text", "URL"];
+      const paths = [];
+
+      formats.forEach(function (format) {
+        try {
+          String(dataTransfer.getData(format) || "")
+            .split(/\r?\n/)
+            .map(function (line) { return normalizeDroppedPath(line); })
+            .filter(isLocalDroppedPath)
+            .forEach(function (path) { paths.push(path); });
+        } catch (_) {
+        }
+      });
+
+      return paths;
+    }
+
+    function getDroppedFilenames(dataTransfer) {
+      const filenames = [];
+      const seen = new Set();
+
+      function addFilename(path) {
+        const normalized = normalizeDroppedPath(path);
+        if (!normalized || seen.has(normalized)) return;
+
+        seen.add(normalized);
+        filenames.push(normalized);
+      }
+
+      Array.from(dataTransfer.files || []).forEach(function (file) {
+        addFilename(getDroppedFilePath(file));
+      });
+
+      getDroppedUriListPaths(dataTransfer).forEach(addFilename);
+      getDroppedTextPaths(dataTransfer).forEach(addFilename);
+
+      return filenames;
+    }
+
+    function postDroppedFiles(filenames, dataTransfer) {
+      if (!window.chrome || !window.chrome.webview) return;
+
+      const message = {
+        event: "file-drop-in",
+        filenames: Array.isArray(filenames) ? filenames : []
+      };
+
+      const files = dataTransfer && dataTransfer.files
+        ? Array.from(dataTransfer.files)
+        : [];
+
+      if (
+        files.length > 0 &&
+        typeof window.chrome.webview.postMessageWithAdditionalObjects === "function"
+      ) {
+        try {
+          window.chrome.webview.postMessageWithAdditionalObjects(message, files);
+          return;
+        } catch (_) {
+        }
+      }
+
+      window.chrome.webview.postMessage(message);
+    }
+
+    function isPointInsideFileDropZone(event) {
+      if (!event || fileDropZone.style.display === "none")
+        return false;
+
+      const rect = fileDropZone.getBoundingClientRect();
+
+      return (
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom
+      );
+    }
+
+    function handleDroppedFiles(event) {
+      if (event.__inputBubbleFileDropHandled) return;
+
+      event.__inputBubbleFileDropHandled = true;
+
+      const filenames = getDroppedFilenames(event.dataTransfer);
+      hideFileDropZone();
+      postDroppedFiles(filenames, event.dataTransfer);
+    }
+
+    function setDropEffect(event) {
+      try {
+        event.dataTransfer.dropEffect = "copy";
+      } catch (_) {
+      }
+    }
+
+    function handleBrowserFileDrag(event) {
+      if (!hasDraggedFiles(event)) return;
+
+      event.preventDefault();
+      setDropEffect(event);
+      showFileDropZone();
+    }
+
+    function handleBrowserFileDrop(event) {
+      if (!hasDraggedFiles(event)) return;
+
+      event.preventDefault();
+
+      if (isPointInsideFileDropZone(event)) {
+        handleDroppedFiles(event);
+        return;
+      }
+
+      hideFileDropZone();
+    }
+
+    function handleBrowserFileDragLeave(event) {
+      if (
+        event.clientX <= 0 ||
+        event.clientY <= 0 ||
+        event.clientX >= window.innerWidth ||
+        event.clientY >= window.innerHeight
+      ) {
+        hideFileDropZone();
+      }
+    }
+
+    fileDropZone.addEventListener("dragover", function (event) {
+      if (!hasDraggedFiles(event)) return;
+
+      event.preventDefault();
+      setDropEffect(event);
+      showFileDropZone();
+    });
+
+    fileDropZone.addEventListener("drop", function (event) {
+      if (!hasDraggedFiles(event)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      handleDroppedFiles(event);
+    });
+
+    window.addEventListener("dragenter", handleBrowserFileDrag, true);
+    window.addEventListener("dragover", handleBrowserFileDrag, true);
+    window.addEventListener("drop", handleBrowserFileDrop, true);
+    window.addEventListener("dragleave", handleBrowserFileDragLeave, true);
 
     function styleButton(btn) {
       Object.assign(btn.style, {
