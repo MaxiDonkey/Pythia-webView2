@@ -1437,6 +1437,10 @@
         badge.textContent = "\uE895"; // Sync
         badge.title = "Uploading";
         badge.style.opacity = "0.7";
+      } else if (file.uploadStatus === "indexing") {
+        badge.textContent = "\uE9F5"; // Processing
+        badge.title = "Indexing";
+        badge.style.opacity = "0.7";
       } else if (file.uploadStatus === "ready") {
         badge.textContent = "\uE73E"; // CheckMark
         badge.title = "Uploaded";
@@ -2201,8 +2205,10 @@
     // Updates the upload status of a file already present in the compose box,
     // identified by its local path. Looks first in __files, then in
     // __knowledgeFiles. When status is "ready", fileId is stored on the
-    // entry. When status is "failed", errorMessage is stored. Unknown paths
-    // are silently ignored.
+    // entry. When status is "failed", errorMessage is stored. The
+    // "indexing" status is the second stage of the knowledge pipeline
+    // (after upload, before retrieval-ready). Unknown paths are silently
+    // ignored.
     window.setFileUploadStatus = function (path, status, fileId, errorMessage) {
       if (!path || !status) return false;
 
@@ -2217,7 +2223,7 @@
           delete entry.uploadError;
         } else if (status === "failed") {
           entry.uploadError = errorMessage || "";
-        } else if (status === "uploading") {
+        } else if (status === "uploading" || status === "indexing") {
           delete entry.uploadError;
         }
 
