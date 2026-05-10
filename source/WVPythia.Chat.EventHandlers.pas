@@ -521,9 +521,7 @@ function TBrowserEventHandlers.LanguageSelectedEvent: Boolean;
 begin
   var Internal := FReader.AsBoolean(PROP_INTERNAL);
   if Internal then
-    begin
-      Exit(False);
-    end;
+    Exit(False);
 
   var Language := FReader.AsString(PROP_VALUE);
   FBrowser.SetLanguage(Language);
@@ -1158,7 +1156,7 @@ end;
 function TCardEventHandler.EmitManagedItemSelection(const ATemplate: string;
   const AItem: TChatManagedItemRef): Boolean;
 begin
-    if AItem.Id.IsEmpty then
+  if AItem.Id.IsEmpty then
     Exit(False);
 
   {--- Inject the selected managed item back into the browser-side input model. }
@@ -1269,7 +1267,6 @@ end;
 function TDialogConfirmationEventHandler.OpenFileDialog: Boolean;
 var
   Filter: string;
-  FilterIndex: Integer;
   SelectedPaths: string;
 begin
   if not Assigned(FOpenDialog) then
@@ -1282,7 +1279,7 @@ begin
 
   var Target := TOpenFileTarget.Parse(FReader.AsString(PROP_TARGET));
 
-  FilterIndex := 0;
+  var FilterIndex := 0;
   case Target of
     TOpenFileTarget.Images:
         Filter := GRAPHIC_EXTENSION;

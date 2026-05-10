@@ -1,3 +1,12 @@
+#### 2026 May 10 - version 0.9.2
+
+- Fix KaTeX rendering inside Markdown responses
+
+Protected LaTeX math blocks during Markdown parsing so KaTeX expressions remain intact before rendering. This prevents formulas containing delimiters, spacing commands, or comparison symbols from being partially interpreted as Markdown or displayed as raw KaTeX code.
+
+
+<br>
+
 #### 2026 May 9 - version 0.9.1
 
 - Add controlled paste-from-clipboard handling

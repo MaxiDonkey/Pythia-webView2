@@ -502,11 +502,127 @@
       });
   }
 
+  const MATH_MARKDOWN_PLACEHOLDER_PREFIX = "DISPLAYTEMPLATEMATH";
+
+  const MATH_MARKDOWN_DELIMITERS = [
+    { left: "$$", right: "$$" },
+    { left: "\\[", right: "\\]" },
+    { left: "\\(", right: "\\)" },
+    { left: "$", right: "$" }
+  ];
+
+  const escapeMathHtml = (value) => {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  };
+
+  const isEscapedMarkdownMathDelimiter = (text, index) => {
+    let backslashCount = 0;
+
+    for (let i = index - 1; i >= 0 && text[i] === "\\"; i--) {
+      backslashCount += 1;
+    }
+
+    return backslashCount % 2 === 1;
+  };
+
+  const getMarkdownMathDelimiterAt = (text, index) => {
+    for (const delimiter of MATH_MARKDOWN_DELIMITERS) {
+      if (!text.startsWith(delimiter.left, index)) continue;
+      if (isEscapedMarkdownMathDelimiter(text, index)) continue;
+
+      if (
+        delimiter.left === "$" &&
+        (text.startsWith("$$", index) || text[index + 1] === " ")
+      ) {
+        continue;
+      }
+
+      return delimiter;
+    }
+
+    return null;
+  };
+
+  const findMarkdownMathEnd = (text, startIndex, delimiter) => {
+    let searchIndex = startIndex;
+
+    while (searchIndex < text.length) {
+      const endIndex = text.indexOf(delimiter.right, searchIndex);
+      if (endIndex === -1) return -1;
+
+      if (
+        !isEscapedMarkdownMathDelimiter(text, endIndex) &&
+        !(delimiter.right === "$" && text.startsWith("$$", endIndex))
+      ) {
+        return endIndex;
+      }
+
+      searchIndex = endIndex + delimiter.right.length;
+    }
+
+    return -1;
+  };
+
+  const protectMathForMarkdown = (src) => {
+    const source = String(src == null ? "" : src);
+    const segments = [];
+    let output = "";
+    let index = 0;
+
+    while (index < source.length) {
+      const delimiter = getMarkdownMathDelimiterAt(source, index);
+
+      if (!delimiter) {
+        output += source[index];
+        index += 1;
+        continue;
+      }
+
+      const contentStart = index + delimiter.left.length;
+      const endIndex = findMarkdownMathEnd(source, contentStart, delimiter);
+
+      if (endIndex === -1) {
+        output += source[index];
+        index += 1;
+        continue;
+      }
+
+      const placeholder = MATH_MARKDOWN_PLACEHOLDER_PREFIX + segments.length + "TOKEN";
+      const contentEnd = endIndex + delimiter.right.length;
+
+      segments.push(source.slice(index, contentEnd));
+      output += placeholder;
+      index = contentEnd;
+    }
+
+    return { source: output, segments };
+  };
+
+  const restoreMathAfterMarkdown = (htmlSource, segments) => {
+    let html = String(htmlSource == null ? "" : htmlSource);
+
+    segments.forEach((segment, index) => {
+      const placeholder = MATH_MARKDOWN_PLACEHOLDER_PREFIX + index + "TOKEN";
+      html = html.split(placeholder).join(escapeMathHtml(segment));
+    });
+
+    return html;
+  };
+
   const buildHtml = (src) => {
     if (!(window.marked && typeof window.marked.parse === "function")) {
       return src;
     }
-    return window.marked.parse(src);
+
+    const protectedMath = protectMathForMarkdown(src);
+    const html = window.marked.parse(protectedMath.source);
+
+    return restoreMathAfterMarkdown(html, protectedMath.segments);
   };
 
   const renderMath = (root) => {

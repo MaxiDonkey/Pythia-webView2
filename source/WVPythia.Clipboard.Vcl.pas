@@ -20,10 +20,11 @@ implementation
 uses
   Winapi.Windows, Winapi.ShellAPI,
   System.SysUtils, System.IOUtils,
-  Vcl.Clipbrd, Vcl.Graphics, Vcl.Imaging.pngimage;
+  Vcl.Clipbrd, Vcl.Graphics, Vcl.Imaging.pngimage,
+  WVPythia.TextFile.Helper;
 
 const
-  ClipboardTextInlineLimit =  6000; //12000;
+  ClipboardTextInlineLimit =  12000;
   ClipboardTempFolderName = 'PythiaClipboard';
   PastedTextFileName = 'Pasted-Text.txt';
   PastedImageFileName = 'Pasted-Image.png';
@@ -77,15 +78,15 @@ begin
     if not Clipboard.HasFormat(CF_UNICODETEXT) then
       Exit;
 
-    var S := Clipboard.AsText;
+    var AsText := Clipboard.AsText;
 
-    if S.IsEmpty then
+    if AsText.IsEmpty then
       Exit;
 
-    if Length(S) <= ClipboardTextInlineLimit then
+    if Length(AsText) <= ClipboardTextInlineLimit then
       begin
         AText.Kind := ctkInline;
-        AText.Text := S;
+        AText.Text := AsText;
         AText.FileName := '';
         Result := True;
 
@@ -96,7 +97,7 @@ begin
     AText.Text := '';
     AText.FileName := NewTempTextFileName;
 
-    TFile.WriteAllText(AText.FileName, S, TEncoding.UTF8);
+    TFileIOHelper.SaveToFile(AText.FileName, AsText);
 
     Result :=
       TFile.Exists(AText.FileName) and
@@ -116,9 +117,6 @@ begin
 end;
 
 function TVclClipboardReader.TrySaveImageToTempPng(out AFileName: string): Boolean;
-var
-  Bitmap: TBitmap;
-  Png: TPngImage;
 begin
   AFileName := '';
   Result := False;
@@ -133,11 +131,11 @@ begin
 
     AFileName := NewTempImageFileName;
 
-    Bitmap := TBitmap.Create;
+    var Bitmap := TBitmap.Create;
     try
       Bitmap.Assign(Clipboard);
 
-      Png := TPngImage.Create;
+      var Png := TPngImage.Create;
       try
         Png.Assign(Bitmap);
         Png.SaveToFile(AFileName);
@@ -186,15 +184,15 @@ begin
     SetLength(AFiles, Count);
 
     for I := 0 to Count - 1 do
-    begin
-      Len := DragQueryFile(DropHandle, I, nil, 0);
+      begin
+        Len := DragQueryFile(DropHandle, I, nil, 0);
 
-      SetLength(Buffer, Len + 1);
-      DragQueryFile(DropHandle, I, PChar(Buffer), Len + 1);
-      SetLength(Buffer, Len);
+        SetLength(Buffer, Len + 1);
+        DragQueryFile(DropHandle, I, PChar(Buffer), Len + 1);
+        SetLength(Buffer, Len);
 
-      AFiles[I] := Buffer;
-    end;
+        AFiles[I] := Buffer;
+      end;
 
     Result := True;
   except

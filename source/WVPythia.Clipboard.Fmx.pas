@@ -20,7 +20,8 @@ implementation
 uses
   Winapi.Windows, Winapi.ShellAPI,
   System.SysUtils, System.IOUtils,
-  FMX.Platform, FMX.Clipboard, FMX.Surfaces, FMX.Graphics;
+  FMX.Platform, FMX.Clipboard, FMX.Surfaces, FMX.Graphics,
+  WVPythia.TextFile.Helper;
 
 const
   ClipboardTextInlineLimit = 12000;
@@ -75,7 +76,6 @@ end;
 function TFmxClipboardReader.TryGetText(out AText: TClipboardTextData): Boolean;
 var
   ClipboardService: IFMXExtendedClipboardService;
-  S: string;
 begin
   AText.Kind := ctkInline;
   AText.Text := '';
@@ -92,35 +92,35 @@ begin
     if not ClipboardService.HasText then
       Exit;
 
-    S := ClipboardService.GetText;
+    var AsText := ClipboardService.GetText;
 
-    if S = '' then
+    if AsText = '' then
       Exit;
 
-    if Length(S) <= ClipboardTextInlineLimit then
-    begin
-      AText.Kind := ctkInline;
-      AText.Text := S;
-      AText.FileName := '';
-      Result := True;
-      Exit;
-    end;
+    if Length(AsText) <= ClipboardTextInlineLimit then
+      begin
+        AText.Kind := ctkInline;
+        AText.Text := AsText;
+        AText.FileName := '';
+        Result := True;
+        Exit;
+      end;
 
     AText.Kind := ctkTempFile;
     AText.Text := '';
     AText.FileName := NewTempTextFileName;
 
-    TFile.WriteAllText(AText.FileName, S, TEncoding.UTF8);
+    TFileIOHelper.SaveToFile(AText.FileName, AsText);
 
     Result :=
       TFile.Exists(AText.FileName) and
       (TFile.GetSize(AText.FileName) > 0);
 
     if not Result then
-    begin
-      AText.Text := '';
-      AText.FileName := '';
-    end;
+      begin
+        AText.Text := '';
+        AText.FileName := '';
+      end;
   except
     AText.Kind := ctkInline;
     AText.Text := '';
@@ -132,7 +132,6 @@ end;
 function TFmxClipboardReader.TrySaveImageToTempPng(out AFileName: string): Boolean;
 var
   ClipboardService: IFMXExtendedClipboardService;
-  Surface: TBitmapSurface;
 begin
   AFileName := '';
   Result := False;
@@ -147,7 +146,7 @@ begin
     if not ClipboardService.HasImage then
       Exit;
 
-    Surface := ClipboardService.GetImage;
+    var Surface := ClipboardService.GetImage;
     if Surface = nil then
       Exit;
 
@@ -204,15 +203,15 @@ begin
       SetLength(AFiles, Count);
 
       for I := 0 to Count - 1 do
-      begin
-        Len := DragQueryFile(DropHandle, I, nil, 0);
+        begin
+          Len := DragQueryFile(DropHandle, I, nil, 0);
 
-        SetLength(Buffer, Len + 1);
-        DragQueryFile(DropHandle, I, PChar(Buffer), Len + 1);
-        SetLength(Buffer, Len);
+          SetLength(Buffer, Len + 1);
+          DragQueryFile(DropHandle, I, PChar(Buffer), Len + 1);
+          SetLength(Buffer, Len);
 
-        AFiles[I] := Buffer;
-      end;
+          AFiles[I] := Buffer;
+        end;
 
       Result := True;
     finally
