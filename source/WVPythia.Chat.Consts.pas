@@ -301,6 +301,7 @@ const
 
 
   FILE_UPLOAD_STATUS_UPLOADING = '"uploading"';
+  FILE_UPLOAD_STATUS_INDEXING  = '"indexing"';
   FILE_UPLOAD_STATUS_READY     = '"ready"';
   FILE_UPLOAD_STATUS_FAILED    = '"failed"';
 

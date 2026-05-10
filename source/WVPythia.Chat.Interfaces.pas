@@ -132,6 +132,70 @@ type
       read GetOnPendingChanged write SetOnPendingChanged;
   end;
 
+  {--- Optional vendor-provided service used by Pythia when the host wants to
+       index selected files into a vector store / knowledge base before they
+       are referenced by the LLM through a retrieval tool (file_search,
+       semantic retrieval, libraries, etc.).
+
+       Distinction with IFileUploadService:
+       • An upload is a one-shot byte transfer; its async primitive is a
+         single promise resolved on completion.
+       • An indexation is a multi-stage pipeline (typically: upload → ingest
+         → chunk + embed → ready) whose completion is observed through
+         polling or webhooks. Stage durations vary from seconds to minutes.
+
+       Lifecycle contract:
+       • ShouldHandle is called synchronously on the UI thread and only for
+         TOpenFileTarget.Knowledge files. Other targets are routed to
+         IFileUploadService.
+       • SubmitForIndexing returns immediately. The implementation is
+         responsible for any required upload step, ingestion call, and
+         polling loop. AOnComplete is invoked exactly once, on the UI
+         thread, when the file is fully indexed (Ready) or has failed.
+         AOnComplete may be nil when the host only relies on
+         TryGetIndexRef at submit time.
+       • CancelOrDelete is called when the user removes a knowledge entry
+         from the compose box, or when the host wants to evict a previously
+         indexed file. Implementations must tolerate calls for unknown
+         paths and must clean up both the staged file (if any) and the
+         vector-store entry server-side.
+       • TryGetIndexRef is queried at submit time, just before the chat
+         payload is built. It returns the opaque reference the vendor needs
+         to consume the indexed file (e.g. vector_store_id for OpenAI,
+         corpus / document id for Gemini, library id for Mistral). It must
+         not block.
+       • PendingCount + OnPendingChanged are exposed so the host UI can
+         disable the send button while at least one indexation is still in
+         flight. PendingCount counts any non-terminal state across the
+         whole multi-stage pipeline (queued, uploading, indexing).
+
+       Important — Ready semantics:
+         A file is Ready only when fully indexed and discoverable by the
+         retrieval tool. A finished upload that has not yet been embedded
+         must NOT be reported as Ready. }
+  IKnowledgeIndexingService = interface
+    ['{B2F84A1C-3D67-4E29-A150-9C8F0B5E7D63}']
+    function ShouldHandle(const ALocalPath: string;
+                          const ATarget: TOpenFileTarget): Boolean;
+
+    procedure SubmitForIndexing(
+      const ALocalPath: string;
+      const ATarget: TOpenFileTarget;
+      const AOnComplete: TUploadCompleteProc = nil);
+
+    procedure CancelOrDelete(const ALocalPath: string);
+
+    function TryGetIndexRef(const ALocalPath: string;
+                            out AIndexRef: string): Boolean;
+
+    function PendingCount: Integer;
+
+    function GetOnPendingChanged: TProc;
+    procedure SetOnPendingChanged(const Value: TProc);
+    property OnPendingChanged: TProc
+      read GetOnPendingChanged write SetOnPendingChanged;
+  end;
+
   IPythiaBrowser = interface
     ['{B6D390AF-CEFB-436A-9560-6BACCC390F25}']
 
@@ -166,6 +230,8 @@ type
     procedure SetApiKeyNamesAsJsonString(const Value: string);
     function GetFileUploadService: IFileUploadService;
     procedure SetFileUploadService(const Value: IFileUploadService);
+    function GetKnowledgeIndexingService: IKnowledgeIndexingService;
+    procedure SetKnowledgeIndexingService(const Value: IKnowledgeIndexingService);
 
     //accessible uniquement avec via l'interface
     function ExecuteScript(const Script: string): Boolean;
@@ -284,6 +350,15 @@ type
          least one transfer is still in flight. }
     function SetSendButtonAvailability(const AEnabled: Boolean): Boolean;
 
+    {--- Aggregated availability push: sums the PendingCount of every
+         registered async file service (FileUploadService and
+         KnowledgeIndexingService), then pushes the resulting flag through
+         SetSendButtonAvailability. Vendor service implementations should
+         call this entry point on every state transition instead of pushing
+         their local PendingCount directly, otherwise two services would
+         overwrite each other's flag. }
+    function RecomputeSendButtonAvailability: Boolean;
+
     // Methods exposed by the object
     procedure Clear;
     procedure BeginUpdate;
@@ -355,11 +430,9 @@ type
     property ApiKeySecretStore: ISecretStore read GetApiKeySecretStore write SetApiKeySecretStore;
     property CommandLine: ICommandRegistry read GetCommandLine write SetCommandLine;
     property ApiKeyNamesAsJsonString: string read GetApiKeyNamesAsJsonString write SetApiKeyNamesAsJsonString;
-    {--- Optional vendor-provided service called when a file is selected through
-         the open dialog. Set it from the host bootstrap to enable remote file
-         transfer (Files API and similar). When unset, files keep flowing through
-         the existing inline pipeline unchanged. }
     property FileUploadService: IFileUploadService read GetFileUploadService write SetFileUploadService;
+    property KnowledgeIndexingService: IKnowledgeIndexingService
+      read GetKnowledgeIndexingService write SetKnowledgeIndexingService;
   end;
 
 implementation

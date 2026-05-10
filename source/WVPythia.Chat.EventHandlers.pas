@@ -461,9 +461,17 @@ begin
 
   var Path := FReader.AsString(PROP_PATH);
 
+  {--- The JS bridge does not carry the target on file-removed events, so
+       both async file services receive the cancellation. Each
+       implementation must tolerate calls for unknown paths (contract
+       documented on IFileUploadService and IKnowledgeIndexingService). }
   var UploadService := FBrowser.FileUploadService;
   if Assigned(UploadService) then
     UploadService.CancelOrDelete(Path);
+
+  var IndexingService := FBrowser.KnowledgeIndexingService;
+  if Assigned(IndexingService) then
+    IndexingService.CancelOrDelete(Path);
 
   Result := True;
 end;
@@ -1182,6 +1190,7 @@ begin
     Exit;
 
   var UploadService := FBrowser.FileUploadService;
+  var IndexingService := FBrowser.KnowledgeIndexingService;
 
   for var Item in APaths do
     begin
@@ -1196,9 +1205,19 @@ begin
           TEscapeHelper.EscapeJSString(ATarget.ToString)])
       );
 
-      if Assigned(UploadService) and
-         UploadService.ShouldHandle(Path, ATarget) then
-        UploadService.SubmitForUpload(Path, ATarget, nil);
+      {--- Knowledge files go through the vectorization pipeline; every other
+           target keeps using the plain upload pipeline. The two services are
+           mutually exclusive on a per-file basis: a path never reaches both. }
+      case ATarget of
+        TOpenFileTarget.Knowledge:
+          if Assigned(IndexingService) and
+             IndexingService.ShouldHandle(Path, ATarget) then
+            IndexingService.SubmitForIndexing(Path, ATarget, nil);
+      else
+        if Assigned(UploadService) and
+           UploadService.ShouldHandle(Path, ATarget) then
+          UploadService.SubmitForUpload(Path, ATarget, nil);
+      end;
 
       Result := True;
     end;

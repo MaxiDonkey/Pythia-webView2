@@ -1,9 +1,14 @@
 #### 2026 May 10 - version 0.9.2
 
+- Add dedicated knowledge indexing service support
+
+Added a dedicated `IKnowledgeIndexingService` pipeline separate from file uploads, with VCL and FMX integration, event-handler routing for Knowledge files, aggregated send-button availability, and an `indexing` status reflected in the WebView2 UI. This prepares the chat bridge for vendor-specific vectorization workflows where files must be fully indexed before being used as knowledge sources.
+
+<br>
+
 - Fix KaTeX rendering inside Markdown responses
 
 Protected LaTeX math blocks during Markdown parsing so KaTeX expressions remain intact before rendering. This prevents formulas containing delimiters, spacing commands, or comparison symbols from being partially interpreted as Markdown or displayed as raw KaTeX code.
-
 
 <br>
 

@@ -485,10 +485,6 @@ type
     property CommandLine: ICommandRegistry read GetCommandLine write SetCommandLine;
   end;
 
-  {--- Holds the optional vendor-provided upload service. Slotted between
-       TVCLPythiaCommandLine and TInterfacedVCLPythia so the IPythiaBrowser
-       implementer transparently inherits Get/Set, mirroring the layering
-       used for ApiKeySecretStore in TVCLPythiaAPIKeyManager. }
   TVCLPythiaFileUploadManager = class(TVCLPythiaCommandLine)
   private
     FFileUploadService: IFileUploadService;
@@ -503,7 +499,16 @@ type
     function SetSendButtonAvailability(const AEnabled: Boolean): Boolean;
   end;
 
-  TInterfacedVCLPythia = class(TVCLPythiaFileUploadManager, IPythiaBrowser)
+  TVCLPythiaKnowledgeIndexingManager = class(TVCLPythiaFileUploadManager)
+  private
+    FKnowledgeIndexingService: IKnowledgeIndexingService;
+  protected
+    function GetKnowledgeIndexingService: IKnowledgeIndexingService;
+    procedure SetKnowledgeIndexingService(const Value: IKnowledgeIndexingService);
+    function RecomputeSendButtonAvailability: Boolean;
+  end;
+
+  TInterfacedVCLPythia = class(TVCLPythiaKnowledgeIndexingManager, IPythiaBrowser)
   strict private
     const
       CLEARANCE = 400;
@@ -644,6 +649,18 @@ type
     /// selected files are sent as document blocks.
     /// </summary>
     property FileUploadService: IFileUploadService read GetFileUploadService write SetFileUploadService;
+
+    /// <summary>
+    /// Optional service invoked when a knowledge file is selected through the
+    /// open dialog. When assigned, the file is routed through
+    /// <c>SubmitForIndexing</c> so the host can vectorize it asynchronously
+    /// (vector store, semantic retrieval corpus, libraries...) and reference
+    /// the resulting index at submit time through <c>TryGetIndexRef</c>.
+    /// Distinct from <c>FileUploadService</c>: the indexing pipeline involves
+    /// poll-until-ready semantics, hence its own service contract.
+    /// </summary>
+    property KnowledgeIndexingService: IKnowledgeIndexingService
+      read GetKnowledgeIndexingService write SetKnowledgeIndexingService;
 
     /// <summary>
     /// Occurs after the browser, bridge, settings, model list, capabilities,
@@ -2789,6 +2806,34 @@ begin
   Result := ExecuteScript(
     Format(SEND_BUTTON_AVAILABILITY_TEMPLATE, [TCastHelp.BoolToStr(AEnabled)])
   );
+end;
+
+{ TVCLPythiaKnowledgeIndexingManager }
+
+function TVCLPythiaKnowledgeIndexingManager.GetKnowledgeIndexingService: IKnowledgeIndexingService;
+begin
+  Result := FKnowledgeIndexingService;
+end;
+
+procedure TVCLPythiaKnowledgeIndexingManager.SetKnowledgeIndexingService(
+  const Value: IKnowledgeIndexingService);
+begin
+  FKnowledgeIndexingService := Value;
+end;
+
+function TVCLPythiaKnowledgeIndexingManager.RecomputeSendButtonAvailability: Boolean;
+var
+  Pending: Integer;
+begin
+  Pending := 0;
+
+  if Assigned(FFileUploadService) then
+    Inc(Pending, FFileUploadService.PendingCount);
+
+  if Assigned(FKnowledgeIndexingService) then
+    Inc(Pending, FKnowledgeIndexingService.PendingCount);
+
+  Result := SetSendButtonAvailability(Pending = 0);
 end;
 
 { TVCLPythiaInputValue }

@@ -583,6 +583,20 @@ begin
            for the custom plugin skeleton. }
     end;
 
+  {--- Optional vendor-provided service called when a file is selected through
+         the open dialog. Set it from the host bootstrap to enable remote file
+         transfer (Files API and similar). When unset, files keep flowing through
+         the existing inline pipeline unchanged. }
+  Pythia.FileUploadService := "instance of" IFileUploadService; 
+
+  {--- Optional vendor-provided service invoked when a TOpenFileTarget.Knowledge
+         file is selected. Set it from the host bootstrap to enable remote
+         vectorization (vector store, semantic retrieval corpus, libraries, …)
+         and reference indexed files at submit time through TryGetIndexRef.
+         When unset, knowledge files remain in the compose box but are not
+         processed asynchronously. }
+  Pythia.KnowledgeIndexingService := "instance of" IKnowledgeIndexingService;  
+
   Pythia.OnInitialized :=
     procedure
     begin
@@ -718,6 +732,20 @@ begin
            Pythia.CommandLine.RegisterPlugin(...) — see §12 for
            the custom plugin skeleton. }
     end;
+
+  {--- Optional vendor-provided service called when a file is selected through
+         the open dialog. Set it from the host bootstrap to enable remote file
+         transfer (Files API and similar). When unset, files keep flowing through
+         the existing inline pipeline unchanged. }
+  Pythia.FileUploadService := "instance of" IFileUploadService; 
+
+  {--- Optional vendor-provided service invoked when a TOpenFileTarget.Knowledge
+         file is selected. Set it from the host bootstrap to enable remote
+         vectorization (vector store, semantic retrieval corpus, libraries, …)
+         and reference indexed files at submit time through TryGetIndexRef.
+         When unset, knowledge files remain in the compose box but are not
+         processed asynchronously. }
+  Pythia.KnowledgeIndexingService := "instance of" IKnowledgeIndexingService;  
 
   Pythia.OnInitialized :=
     procedure
