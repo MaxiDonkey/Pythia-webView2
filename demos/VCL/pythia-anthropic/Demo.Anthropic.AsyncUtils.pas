@@ -1,4 +1,4 @@
-unit Demo.Anthropic.AsyncUtils;
+﻿unit Demo.Anthropic.AsyncUtils;
 
 interface
 
@@ -22,36 +22,71 @@ type
   end;
 
   TAnthropicClientUtils = class(TInterfacedObject, IAnthropicClientUtils)
+  const
+    MODEL_FOR_RENAMING = 'claude-haiku-4-5';
   private
     FClient: IAnthropic;
     FPythia: IPythiaBrowser;
   protected
+    /// <summary>
+    /// Searches Anthropic custom skills by display title, following all
+    /// result pages until a case-insensitive match for AName is found.
+    /// Returns the matching skill ID, or an empty string when no match exists.
+    /// </summary>
     function FindCustomSkillIDByDisplayTitle(const AName: string): string;
+
+    /// <summary>
+    /// Registers a custom skill by creating it from the files in Folder and
+    /// assigning AName as its display title. The Skills API creates the skill
+    /// and its first immutable version in a single upload. Returns the new
+    /// skill ID.
+    /// </summary>
     function SkillRegister(const AName: string; const Folder: string): string;
   public
     constructor Create(const AClient: IAnthropic; const ABrowser: IPythiaBrowser);
 
+    /// <summary>
+    /// Fire-and-forget chat-title generation for ChatID. The model summarizes
+    /// ContentToSummarize into a short title, which is then saved to the
+    /// persistent chat store and reflected in the active chat session. Empty
+    /// results and failures are ignored.
+    /// </summary>
     procedure ASyncSessionRename(const ChatID: string; const ContentToSummarize: string);
+
+    /// <summary>
+    /// Registers or resolves the Anthropic custom skill identified by AName.
+    /// If the registered skill ID differs from SkillID, the local skill-card
+    /// file is updated accordingly. Missing folders, registration failures,
+    /// and update results are reported through the Pythia UI.
+    /// </summary>
     procedure CustomSkillRegister(const SkillID: string; const AName: string);
 
-    {--- Resolves all retrieve promises in parallel and yields the server-side
-         filenames in the same order as the input IDs. The returned promise
-         rejects on first failure. }
+    /// <summary>
+    /// Resolves all retrieve promises in parallel and yields the server-side
+    /// filenames in the same order as the input IDs. The returned promise
+    /// rejects on first failure.
+    /// </summary>
     function WhenAllRetrieve(const IDs: TArray<string>): TPromise<TArray<string>>;
 
-    {--- Fire-and-forget download that saves the payload at LocalPath, then
-         best-effort deletes the server-side file once the local copy is
-         persisted (or once the download has definitively failed). The delete
-         is itself fire-and-forget; failures are silent. }
+    /// <summary>
+    /// Fire-and-forget download that saves the payload at LocalPath, then
+    /// best-effort deletes the server-side file once the local copy is
+    /// persisted (or once the download has definitively failed). The delete
+    /// is itself fire-and-forget; failures are silent.
+    /// </summary>
     procedure AsyncDownloadAs(const ID, LocalPath: string);
 
-    {--- Fire-and-forget best-effort delete of one server-side file. Empty
-         IDs are ignored. Errors are silent (404/already-deleted is normal
-         after AsyncDownloadAs has already cleaned up). }
+    /// <summary>
+    /// Fire-and-forget best-effort delete of one server-side file. Empty
+    /// IDs are ignored. Errors are silent (404/already-deleted is normal
+    /// after AsyncDownloadAs has already cleaned up).
+    /// </summary>
     procedure AsyncDeleteFire(const ID: string);
 
-    {--- Bulk variant. Used to clean up prompt-attached file_ids
-         (State.Files[i].FileId) once the assistant turn has consumed them. }
+    /// <summary>
+    /// Bulk variant. Used to clean up prompt-attached file_ids
+    /// (State.Files[i].FileId) once the assistant turn has consumed them.
+    /// </summary>
     procedure AsyncDeleteAllFire(const IDs: TArray<string>);
   end;
 
@@ -166,6 +201,7 @@ begin
         begin
           if Settled then
             Exit;
+
           Settled := True;
           Resolve(Names);
         end;
@@ -175,6 +211,7 @@ begin
         begin
           if Settled then
             Exit;
+
           Settled := True;
           try
             Reject(Exception.Create(Msg));
@@ -202,9 +239,11 @@ begin
                 begin
                   if Settled then
                     Exit;
+
                   try
                     Names[Idx] := Value.Filename;
                     Dec(Remaining);
+
                     if Remaining = 0 then
                       SettleResolve();
                   except
@@ -221,6 +260,7 @@ begin
                        or fail on an exotic class. Stringifying here is safe. }
                   var Msg := Format('Files.Retrieve [%s] failed: %s (%s)',
                     [IDs[Idx], E.Message, E.ClassName]);
+
                   SettleReject(Msg);
                 end);
           except
@@ -235,6 +275,7 @@ begin
           begin
             if Settled then
               Break;
+
             StartOne(I);
           end;
       except
@@ -271,6 +312,7 @@ begin
       begin
         if Assigned(FPythia) then
           FPythia.DisplayError(Format('Download failed:#10%s', [LocalPath]));
+
         {--- Even if the download failed, attempt to clean up server-side so
              we don't leak quota for a file we'll never reuse. }
         AsyncDeleteFire(FileId);
@@ -311,8 +353,9 @@ end;
 procedure TAnthropicClientUtils.ASyncSessionRename(const ChatID,
   ContentToSummarize: string);
 begin
-  var Model := 'claude-haiku-4-5';
+  var Model := MODEL_FOR_RENAMING;
   var MaxTokens := 1000;
+  var Prompt := Format('Summarize the following message:'#10'%s', [ContentToSummarize]);
   var SystemPrompt :=
     '# Rules :' + slineBreak +
     '- Do not comment on your answer' + slineBreak +
@@ -320,7 +363,6 @@ begin
     '- Do not use articles or pronouns' + slineBreak +
     '- Write at most 4 words' + sLineBreak +
     '- No final punctuation';
-  var Prompt := Format('Summarize the following message:'#10'%s', [ContentToSummarize]);
 
   var Payload: TChatParamProc :=
     procedure (Params: TChatParams)
@@ -334,9 +376,7 @@ begin
         .MaxTokens(MaxTokens);
     end;
 
-  var Promise := FClient.Chat.AsyncAwaitCreate(Payload);
-
-  Promise
+  FClient.Chat.AsyncAwaitCreate(Payload)
     .&Then(
       procedure (Value: TChat)
       begin

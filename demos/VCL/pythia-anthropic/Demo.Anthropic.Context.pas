@@ -2,7 +2,7 @@
 
 interface
 
-{$REGION 'TMessageParam'}
+{$REGION 'Dev note'}
 (*
 
   Conversation context for the pythia-anthropic VCL demo.
@@ -156,11 +156,8 @@ type
   IContext = interface
     ['{9E1085A1-AA34-49CE-ADB7-A5E655D7D204}']
     function HasHistory: Boolean;
-
     function GetHistory: TArray<TMessageParam>;
-
     function LastContainerId: string;
-
     function BetaExtract: TArray<string>;
 
     function BuildMessages(
@@ -269,14 +266,40 @@ type
   public
     constructor Create(const ABrowser: IPythiaBrowser);
 
+    /// <summary>
+    /// Returns True when the current session has previous chat turns available
+    /// for context reconstruction.
+    /// </summary>
     function HasHistory: Boolean;
 
+    /// <summary>
+    /// Rebuilds the current session history as Anthropic message parameters.
+    /// Historical turns are replayed in order, preserving structured user
+    /// content blocks and assistant response blocks when available.
+    /// </summary>
     function GetHistory: TArray<TMessageParam>;
 
+    /// <summary>
+    /// Returns the most recent Anthropic container ID found in the current
+    /// session history. Completed turns are scanned from newest to oldest, and
+    /// the first non-empty container ID is returned so the next request can
+    /// reuse the same server-side container.
+    /// </summary>
     function LastContainerId: string;
 
+    /// <summary>
+    /// Extracts the unique beta feature flags used by previous turns in the
+    /// current session. Each completed turn's persisted JSON prompt is parsed,
+    /// its top-level beta array is read when present, and values are returned
+    /// in order of first appearance.
+    /// </summary>
     function BetaExtract: TArray<string>;
 
+    /// <summary>
+    /// Builds the Anthropic message timeline by replaying the current session
+    /// history first, then appending the current user content blocks. AState is
+    /// reserved for future context-window trimming or summarization decisions.
+    /// </summary>
     function BuildMessages(
       const AState: TStateBuffer;
       const ACurrentContent: TArray<TContentBlockParam>): TArray<TMessageParam>;
@@ -696,6 +719,7 @@ begin
   if not ASnapshot.Content.Trim.IsEmpty then
     begin
       var Inner := TJSONObject.ParseJSONValue(ASnapshot.Content);
+
       if Assigned(Inner) and ((Inner is TJSONObject) or (Inner is TJSONArray)) then
         Block.Add('content', Inner)
       else

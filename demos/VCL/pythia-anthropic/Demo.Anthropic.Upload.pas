@@ -1,28 +1,34 @@
 ﻿unit Demo.Anthropic.Upload;
 
-{-------------------------------------------------------------------------------
-
-  Anthropic-side implementation of the IFileUploadService contract exposed by
-  Pythia core. Every selected file routed here is uploaded asynchronously to
-  the Anthropic Files API, and its file_id is pushed back to the JS layer via
-  IPythiaBrowser.SetFileUploadStatus so the input bubble can carry it into the
-  submit payload.
-
-  Threading model:
-    All public methods are expected to run on the UI thread. The Anthropic SDK
-    promises resolve their .Then / .Catch handlers on the UI thread as well,
-    so the internal dictionary is never touched concurrently.
-
-  Cancellation model:
-    The SDK does not currently expose a cancel primitive on an in-flight
-    upload promise. CancelOrDelete therefore flags the entry as Cancelled;
-    when the promise eventually resolves, the resolution handler detects the
-    flag, deletes the resulting file_id remotely (fire and forget) and drops
-    the entry. Already-Ready entries are deleted immediately.
-
--------------------------------------------------------------------------------}
-
 interface
+
+{$REGION 'Dev note'}
+
+(*
+
+    Anthropic-side implementation of the IFileUploadService contract exposed by
+    Pythia core. Every selected file routed here is uploaded asynchronously to
+    the Anthropic Files API, and its file_id is pushed back to the JS layer via
+    IPythiaBrowser.SetFileUploadStatus so the input bubble can carry it into the
+    submit payload.
+
+    Threading model:
+    ---------------
+      All public methods are expected to run on the UI thread. The Anthropic SDK
+      promises resolve their .Then / .Catch handlers on the UI thread as well,
+      so the internal dictionary is never touched concurrently.
+
+    Cancellation model:
+    ------------------
+      The SDK does not currently expose a cancel primitive on an in-flight
+      upload promise. CancelOrDelete therefore flags the entry as Cancelled;
+      when the promise eventually resolves, the resolution handler detects the
+      flag, deletes the resulting file_id remotely (fire and forget) and drops
+      the entry. Already-Ready entries are deleted immediately.
+
+*)
+
+{$ENDREGION}
 
 uses
   System.SysUtils, System.Generics.Collections,
@@ -71,23 +77,57 @@ type
       const AClient: IAnthropic);
     destructor Destroy; override;
 
+    /// <summary>
+    /// Determines whether the upload service should handle the specified file
+    /// for the requested target. Archive documents are routed through the
+    /// Anthropic Files API, knowledge files are always tracked, and unsupported
+    /// targets are ignored.
+    /// </summary>
     function ShouldHandle(
       const ALocalPath: string;
       const ATarget: TOpenFileTarget): Boolean;
 
+    /// <summary>
+    /// Starts an asynchronous upload for ALocalPath and tracks its status for
+    /// ATarget. Duplicate ready entries are short-circuited with the cached
+    /// file ID. Upload progress, completion, failure, and availability changes
+    /// are propagated to the Pythia UI, and AOnComplete is invoked when the
+    /// operation completes.
+    /// </summary>
     procedure SubmitForUpload(
       const ALocalPath: string;
       const ATarget: TOpenFileTarget;
       const AOnComplete: TUploadCompleteProc = nil);
 
+    /// <summary>
+    /// Cancels or removes the tracked upload entry for ALocalPath. In-flight
+    /// uploads are marked as cancelled and cleaned up when their promise
+    /// resolves; completed uploads are removed locally and deleted remotely;
+    /// failed uploads are removed from the local tracking table.
+    /// </summary>
     procedure CancelOrDelete(const ALocalPath: string);
 
+    /// <summary>
+    /// Attempts to retrieve the Anthropic file ID associated with ALocalPath.
+    /// Returns True only when the file is tracked and its upload has completed
+    /// successfully; otherwise, clears AFileId and returns False.
+    /// </summary>
     function TryGetFileId(
       const ALocalPath: string;
       out AFileId: string): Boolean;
 
+    /// <summary>
+    /// Returns the number of tracked uploads that are still in progress.
+    /// Completed, failed, cancelled, or locally removed entries are not
+    /// included in the count.
+    /// </summary>
     function PendingCount: Integer;
 
+    /// <summary>
+    /// Gets or sets the callback invoked whenever the number of pending uploads
+    /// changes. The callback is triggered when upload entries enter or leave
+    /// the pending state, allowing the UI to refresh its upload availability.
+    /// </summary>
     property OnPendingChanged: TProc read GetOnPendingChanged write SetOnPendingChanged;
   end;
 

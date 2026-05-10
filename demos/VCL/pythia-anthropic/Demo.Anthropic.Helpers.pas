@@ -717,8 +717,8 @@ end;
 class function TParamsGetter.TryReadMCPCard(const Reader: TJsonReader;
   const X: string; out content, pat: string): Boolean;
 begin
-  content := '';
-  pat := '';
+  Content := '';
+  Pat := '';
 
   for var I := 0 to Reader.Count('cards') - 1 do
     begin
@@ -727,8 +727,8 @@ begin
       if SameText(X, Reader.AsString(CardPath + '.id')) or
          SameText(X, Reader.AsString(CardPath + '.name')) then
         begin
-          content := Reader.AsString(CardPath + '.content');
-          pat := Reader.AsString(CardPath + '.pat');
+          Content := Reader.AsString(CardPath + '.content');
+          Pat := Reader.AsString(CardPath + '.pat');
           Exit(True);
         end;
     end;
