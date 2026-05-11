@@ -1,4 +1,10 @@
-#### 2026 May 10 - version 0.9.2
+#### 2026 May 11 - version 0.9.2
+
+- Fix code block parsing with KaTeX protection
+
+Fixed a rendering regression where Delphi code blocks containing `$` characters could be incorrectly merged when KaTeX protection was applied before Markdown parsing. Markdown code fences are now protected as complete opening/closing pairs before math detection, preserving each code container independently while keeping KaTeX rendering intact.
+
+<br>
 
 - Add dedicated knowledge indexing service support
 
