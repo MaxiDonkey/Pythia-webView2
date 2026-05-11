@@ -74,6 +74,7 @@ interface
     - TTextEditorCodeExecutionToolResultBlockParam (text-editor result echo)
     - TBashCodeExecutionToolResultBlockParam       (bash result echo)
     - TMCPToolResultBlockParam                     (MCP result echo)
+    - TWebSearchToolResultBlockParam               (web search result echo)
 
   Note on tool_use / tool_result pairing
   --------------------------------------
@@ -174,7 +175,8 @@ type
     bskToolResult,
     bskTextEditorCodeExecutionToolResult,
     bskBashCodeExecutionToolResult,
-    bskMCPToolResult
+    bskMCPToolResult,
+    bskWebSearchToolResult
   );
 
   TBlockSnapshot = record
@@ -260,6 +262,9 @@ type
     function BuildMCPToolResultBlock(
       const ASnapshot: TBlockSnapshot): TContentBlockParam;
 
+    function BuildWebSearchToolResultBlock(
+      const ASnapshot: TBlockSnapshot): TContentBlockParam;
+
     procedure AppendTurn(
       var AMessages: TMessages;
       const ATurn: TChatTurn);
@@ -340,6 +345,9 @@ begin
 
   if SameText(ABlockType, 'mcp_tool_result') then
     Exit(bskMCPToolResult);
+
+  if SameText(ABlockType, 'web_search_tool_result') then
+    Exit(bskWebSearchToolResult);
 
   Result := bskUnknown;
 end;
@@ -736,6 +744,38 @@ begin
   Result := Block;
 end;
 
+function TAnthropicContext.BuildWebSearchToolResultBlock(
+  const ASnapshot: TBlockSnapshot): TContentBlockParam;
+begin
+  (*--- Server-executed web search result. Pairs with a previously emitted
+        web_search server_tool_use:
+
+          messages.N: `web_search` tool use with id ... was found without
+          a corresponding `web_search_tool_result` block.
+
+        TWebSearchToolResultBlockParam exposes typed Content() overloads
+        only (TArray<TWebSearchToolResultBlockItem> for the success path,
+        TWebSearchToolRequestError for the error path) � no string
+        fallback. Same shortcut as the text-editor / bash builders:
+        capture the raw `content_block.content` JSON in ASnapshot.Content,
+        parse it back as a TJSONValue (the wire shape is normally an
+        array of search-result items) and inject it through the
+        inherited TJSONParam.Add('content', ...) entry point so the
+        original structure is replayed verbatim.
+  *)
+  var Block := TWebSearchToolResultBlockParam.New
+    .ToolUseId(ASnapshot.ToolUseId);
+
+  if not ASnapshot.Content.Trim.IsEmpty then
+    begin
+      var Inner := TJSONObject.ParseJSONValue(ASnapshot.Content);
+      if Assigned(Inner) then
+        Block.Add('content', Inner);
+    end;
+
+  Result := Block;
+end;
+
 function TAnthropicContext.BuildAssistantContent(
   const ATurn: TChatTurn): TArray<TContentBlockParam>;
 begin
@@ -772,6 +812,9 @@ begin
 
       bskMCPToolResult:
         Result := Result + [BuildMCPToolResultBlock(S)];
+
+      bskWebSearchToolResult:
+        Result := Result + [BuildWebSearchToolResultBlock(S)];
     end;
 end;
 
