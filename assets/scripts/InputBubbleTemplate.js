@@ -543,25 +543,40 @@
 
     let fileDropZoneHideTimer = 0;
 
+    function readDrawerRightFromDom() {
+      const drawer = document.getElementById(FILES_DRAWER_ROOT_ID);
+      if (!drawer) return 0;
+
+      const rect = drawer.getBoundingClientRect();
+      if (!rect) return 0;
+
+      const right = Math.max(rect.right, rect.left + rect.width);
+      return right > 0 ? right : 0;
+    }
+
+    function readDrawerRightFromLayoutVar() {
+      const raw = getComputedStyle(document.documentElement)
+        .getPropertyValue("--layout-left-panel-width");
+
+      const parsed = parseFloat(raw);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    }
+
     function getFileDropZoneBounds() {
       const viewportWidth =
         window.innerWidth ||
         document.documentElement.clientWidth ||
         0;
 
-      let left = 0;
+      const drawerRight = Math.max(
+        readDrawerRightFromDom(),
+        readDrawerRightFromLayoutVar()
+      );
 
-      const drawer = document.getElementById(FILES_DRAWER_ROOT_ID);
-      if (drawer) {
-        const rect = drawer.getBoundingClientRect();
-
-        if (rect && rect.width > 0 && rect.right > 0) {
-          left = Math.min(
-            viewportWidth,
-            Math.max(0, Math.round(rect.right))
-          );
-        }
-      }
+      const left = Math.min(
+        viewportWidth,
+        Math.max(0, Math.round(drawerRight))
+      );
 
       return {
         left: left,
@@ -574,7 +589,14 @@
 
       fileDropZone.style.left = bounds.left + "px";
       fileDropZone.style.width = bounds.width + "px";
+      fileDropZone.style.right = "auto";
     }
+
+    window.addEventListener("resize", function () {
+      if (fileDropZone.style.display === "flex") {
+        applyFileDropZoneBounds();
+      }
+    });
 
     function hasDraggedFiles(event) {
       const dataTransfer = event && event.dataTransfer;

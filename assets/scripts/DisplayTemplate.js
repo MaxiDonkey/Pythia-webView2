@@ -548,12 +548,33 @@
     return null;
   };
 
-  const findMarkdownMathEnd = (text, startIndex, delimiter) => {
+  const getMarkdownProtectedRangeContaining = (ranges, index) => {
+    if (!ranges || !ranges.length) return null;
+
+    for (const range of ranges) {
+      if (index < range.start) return null;
+      if (index >= range.start && index < range.end) return range;
+    }
+
+    return null;
+  };
+
+  const findMarkdownMathEnd = (text, startIndex, delimiter, protectedRanges) => {
     let searchIndex = startIndex;
 
     while (searchIndex < text.length) {
       const endIndex = text.indexOf(delimiter.right, searchIndex);
       if (endIndex === -1) return -1;
+
+      const protectedRange = getMarkdownProtectedRangeContaining(
+        protectedRanges,
+        endIndex
+      );
+
+      if (protectedRange) {
+        searchIndex = protectedRange.end;
+        continue;
+      }
 
       if (
         !isEscapedMarkdownMathDelimiter(text, endIndex) &&
@@ -568,13 +589,190 @@
     return -1;
   };
 
+  const getMarkdownLineStart = (text, index) => {
+    const lineBreakIndex = text.lastIndexOf("\n", index - 1);
+    return lineBreakIndex === -1 ? 0 : lineBreakIndex + 1;
+  };
+
+  const getMarkdownLineEnd = (text, index) => {
+    const lineBreakIndex = text.indexOf("\n", index);
+    return lineBreakIndex === -1 ? text.length : lineBreakIndex + 1;
+  };
+
+  const getMarkdownFenceMatch = (line, closingOnly) => {
+    const normalized = String(line == null ? "" : line).replace(/\r$/, "");
+    const pattern = closingOnly
+      ? /^[ \t]*(`{3,}|~{3,})[ \t]*$/
+      : /^[ \t]*(`{3,}|~{3,})[^\r\n]*$/;
+
+    const match = normalized.match(pattern);
+    if (!match) return null;
+
+    return {
+      marker: match[1],
+      char: match[1][0],
+      length: match[1].length
+    };
+  };
+
+  const collectMarkdownFenceRanges = (source) => {
+    const ranges = [];
+    let index = 0;
+
+    while (index < source.length) {
+      const lineEnd = source.indexOf("\n", index);
+      const contentEnd = lineEnd === -1 ? source.length : lineEnd;
+      const line = source.slice(index, contentEnd);
+      const opening = getMarkdownFenceMatch(line, false);
+
+      if (!opening) {
+        index = lineEnd === -1 ? source.length : lineEnd + 1;
+        continue;
+      }
+
+      const rangeStart = index;
+      let searchIndex = lineEnd === -1 ? source.length : lineEnd + 1;
+      let rangeEnd = source.length;
+
+      while (searchIndex < source.length) {
+        const closeLineEnd = source.indexOf("\n", searchIndex);
+        const closeContentEnd = closeLineEnd === -1 ? source.length : closeLineEnd;
+        const closeLine = source.slice(searchIndex, closeContentEnd);
+        const closing = getMarkdownFenceMatch(closeLine, true);
+
+        if (closing && closing.char === opening.char) {
+          rangeEnd = closeLineEnd === -1 ? source.length : closeLineEnd + 1;
+          break;
+        }
+
+        if (closeLineEnd === -1) break;
+        searchIndex = closeLineEnd + 1;
+      }
+
+      ranges.push({ start: rangeStart, end: rangeEnd });
+      index = rangeEnd;
+    }
+
+    return ranges;
+  };
+
+  const rangeContainsIndex = (range, index) => {
+    return !!range && index >= range.start && index < range.end;
+  };
+
+  const collectMarkdownCodeSpanRanges = (source, fenceRanges) => {
+    const ranges = [];
+    let index = 0;
+
+    while (index < source.length) {
+      const fenceRange = getMarkdownProtectedRangeContaining(fenceRanges, index);
+      if (fenceRange) {
+        index = fenceRange.end;
+        continue;
+      }
+
+      if (source[index] !== "`") {
+        index += 1;
+        continue;
+      }
+
+      let tickLength = 0;
+      while (source[index + tickLength] === "`") {
+        tickLength += 1;
+      }
+
+      const marker = "`".repeat(tickLength);
+      const endIndex = source.indexOf(marker, index + tickLength);
+
+      if (endIndex === -1) {
+        index += tickLength;
+        continue;
+      }
+
+      const rangeEnd = endIndex + tickLength;
+      ranges.push({ start: index, end: rangeEnd });
+      index = rangeEnd;
+    }
+
+    return ranges.filter((range) => {
+      return !fenceRanges.some((fenceRange) => {
+        return (
+          rangeContainsIndex(fenceRange, range.start) ||
+          rangeContainsIndex(fenceRange, range.end - 1)
+        );
+      });
+    });
+  };
+
+  const collectMarkdownIndentedCodeRanges = (source, protectedRanges) => {
+    const ranges = [];
+    let index = 0;
+
+    while (index < source.length) {
+      const protectedRange = getMarkdownProtectedRangeContaining(protectedRanges, index);
+      if (protectedRange) {
+        index = protectedRange.end;
+        continue;
+      }
+
+      const lineEnd = getMarkdownLineEnd(source, index);
+
+      if (source.startsWith("    ", index) || source[index] === "\t") {
+        ranges.push({ start: index, end: lineEnd });
+      }
+
+      index = lineEnd;
+    }
+
+    return ranges;
+  };
+
+  const collectMarkdownProtectedRanges = (source) => {
+    const fenceRanges = collectMarkdownFenceRanges(source);
+    const codeSpanRanges = collectMarkdownCodeSpanRanges(source, fenceRanges);
+    const codeRanges = fenceRanges
+      .concat(codeSpanRanges)
+      .sort((a, b) => a.start - b.start || b.end - a.end);
+    const indentedCodeRanges = collectMarkdownIndentedCodeRanges(
+      source,
+      codeRanges
+    );
+
+    return codeRanges
+      .concat(indentedCodeRanges)
+      .sort((a, b) => a.start - b.start || b.end - a.end);
+  };
+
+  const getMarkdownProtectedRangeStartingAt = (ranges, index) => {
+    if (!ranges || !ranges.length) return null;
+
+    for (const range of ranges) {
+      if (range.start === index) return range;
+      if (range.start > index) return null;
+    }
+
+    return null;
+  };
+
   const protectMathForMarkdown = (src) => {
     const source = String(src == null ? "" : src);
+    const protectedRanges = collectMarkdownProtectedRanges(source);
     const segments = [];
     let output = "";
     let index = 0;
 
     while (index < source.length) {
+      const protectedRange = getMarkdownProtectedRangeStartingAt(
+        protectedRanges,
+        index
+      );
+
+      if (protectedRange) {
+        output += source.slice(protectedRange.start, protectedRange.end);
+        index = protectedRange.end;
+        continue;
+      }
+
       const delimiter = getMarkdownMathDelimiterAt(source, index);
 
       if (!delimiter) {
@@ -584,7 +782,12 @@
       }
 
       const contentStart = index + delimiter.left.length;
-      const endIndex = findMarkdownMathEnd(source, contentStart, delimiter);
+      const endIndex = findMarkdownMathEnd(
+        source,
+        contentStart,
+        delimiter,
+        protectedRanges
+      );
 
       if (endIndex === -1) {
         output += source[index];
