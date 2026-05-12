@@ -1,3 +1,14 @@
+#### 2026 May 12 - version 0.9.3
+
+- Route dropped media files to the image list
+
+Updated the input bubble file handling so image files received through drag-and-drop or file selection are detected by MIME type and extension, then routed to the image attachment list instead of the generic file list. The UI now keeps documents and image media separated correctly.
+
+- Fix Anthropic web search tool result replay (VCL_Anthropic demo)
+
+Added support for replaying `web_search_tool_result` blocks in the Anthropic context builder. This preserves the required pairing between previous `web_search` tool calls and their results, preventing 400 errors when continuing conversations that used web search earlier.
+
+
 #### 2026 May 11 - version 0.9.2
 
 - Fix code block parsing with KaTeX protection

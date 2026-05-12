@@ -521,7 +521,7 @@
 
     const imageInput = document.createElement("input");
     imageInput.type = "file";
-    imageInput.accept = "image/*";
+    imageInput.accept = "image/*";  /**/
     imageInput.multiple = true;
     imageInput.style.display = "none";
 
@@ -1902,6 +1902,8 @@
          list = host.__knowledgeFiles;
       } else if (target === "speech") {
          list = host.__speechToTextFiles;
+      } else if (isMediaFile(name)) {
+         list = host.__images;
       } else {
          list = host.__files;
       }
@@ -3415,6 +3417,33 @@
       sendBtn.style.gridColumn = "3";
     }
 
+    const MEDIA_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp"];
+
+    function hasMediaExtension(name) {
+      if (typeof name !== "string") return false;
+
+      const lower = name.toLowerCase();
+      const dot = lower.lastIndexOf(".");
+      if (dot < 0) return false;
+
+      return MEDIA_EXTENSIONS.indexOf(lower.slice(dot + 1)) !== -1;
+    }
+
+    function isMediaFile(file) {
+      if (!file) return false;
+
+      if (typeof file === "string") return hasMediaExtension(file);
+
+      const type = (file.type || "").toLowerCase();
+
+      if (type.startsWith("image/")) {
+        const subtype = type.slice("image/".length);
+        if (MEDIA_EXTENSIONS.indexOf(subtype) !== -1) return true;
+      }
+
+      return hasMediaExtension(file.name);
+    }
+
     fileInput.addEventListener("change", function () {
       const files = Array.from(fileInput.files);
 
@@ -3426,8 +3455,14 @@
         a.lastModified === b.lastModified;
 
       files.forEach(f => {
-        if (!host.__files.some(existing => isSame(existing, f))) {
-          host.__files.push(f);
+        if (isMediaFile(f)) {
+          if (!host.__images.some(existing => isSame(existing, f))) {
+            host.__images.push(f);
+          }
+        } else {
+          if (!host.__files.some(existing => isSame(existing, f))) {
+            host.__files.push(f);
+          }
         }
       });
 

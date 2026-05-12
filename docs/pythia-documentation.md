@@ -2094,7 +2094,6 @@ Instantiate the vendor after the form is shown and the browser has had time to i
 
 ```pascal
 uses
-  System.Threading,
   VCL.WVPythia.Chat,
   WVPythia.Types,
   VCL.WVPythia.Services,
@@ -2105,26 +2104,8 @@ begin
   Pythia := TVCLPythia.Create(Panel2);
   Pythia.ServiceAdapter := TVCLChatManagedItemDialogService.Create;
   Pythia.OnApiKeyChanged := UpdateApiKey;
+  Pythia.OnInitialized := DoOnInitialized;
   Pythia.Update;
-end;
-
-procedure TForm1.FormShow(Sender: TObject);
-begin
-  DelayedFormshow;
-end;
-
-procedure TForm1.DelayedFormshow;
-begin
-  TTask.Run(
-    procedure()
-    begin
-      Sleep(1200);
-      TThread.Queue(nil,
-        procedure
-        begin
-          DoInitialize;
-        end);
-    end);
 end;
 
 procedure TForm1.DoInitialize;
