@@ -174,9 +174,17 @@ type
     AudioResults: TArray<string>;
     VideoResults: TArray<string>;
 
+    {--- File ids harvested live from the streamed tool-result blocks
+         (e.g. bash_code_execution_tool_result). Populated through
+         AddOutputFileId from the vendor service's OnProgress handler,
+         so the post-stream finalize path doesn't have to re-parse the
+         raw JSON to discover what needs to be downloaded. }
+    OutputFileIds: TArray<string>;
+
     procedure AddStreamedText(const Value: string);
     procedure AddStreamedThinking(const Value: string);
     procedure AddJsonResponse(const Value: string);
+    procedure AddOutputFileId(const Value: string);
 
     class function FromState(const AState: TInputPromptState): TStateBuffer; static;
     class operator Implicit(const AState: TInputPromptState): TStateBuffer;
@@ -438,6 +446,19 @@ begin
     JsonResponse := Value
   else
     JsonResponse := JsonResponse + #10 + Value;
+end;
+
+procedure TStateBuffer.AddOutputFileId(const Value: string);
+begin
+  var Id := Value.Trim;
+  if Id.IsEmpty then
+    Exit;
+
+  for var Existing in OutputFileIds do
+    if SameText(Existing, Id) then
+      Exit;
+
+  OutputFileIds := OutputFileIds + [Id];
 end;
 
 procedure TStateBuffer.AddStreamedText(const Value: string);

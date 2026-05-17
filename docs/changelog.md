@@ -1,4 +1,16 @@
-#### 2026 May 12 - version 0.9.3
+#### 2026 May 17 - version 0.9.3
+
+- Update DelphiAnthropic dependency for the VCL_Anthropic demo
+
+Replaced the DelphiAnthropic dependency used by the `VCL_Anthropic` demo from version `1.2.0` to version `1.3.0`. The demo remains integrated as a Pythia vendor implementation and now targets the updated Anthropic SDK surface.
+
+<br>
+
+- Adapt Anthropic context replay and beta handling
+
+Updated `demos\VCL\pythia-anthropic\Demo.Anthropic.Context.pas` for the newer Anthropic beta behavior, including replay support aligned with the SDK 1.3 code-execution result blocks. The demo now uses a hybrid beta mode: SDK auto-detection via `TBetaHeaderManager` is preserved, while the vendor layer adds only the extra beta tokens still needed for legacy replay, skills, or Files API scenarios.
+
+<br>
 
 - Route dropped media files to the image list
 
