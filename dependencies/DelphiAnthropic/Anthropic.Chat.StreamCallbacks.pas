@@ -101,7 +101,7 @@ begin
   if not Assigned(AChunk) then
     Exit(Self);
 
-  RawJson := RawJson + sLineBreak + AChunk.JSONResponse;
+  RawJson := RawJson + AChunk.JSONResponse;
 
   case AChunk.EventType of
     TEventType.message_start:
