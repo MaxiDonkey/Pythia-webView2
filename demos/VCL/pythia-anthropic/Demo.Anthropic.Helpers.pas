@@ -115,6 +115,20 @@ type
       const ParamProc: TProc): Boolean; static;
   end;
 
+  /// <summary>
+  /// Typed extraction of file_ids carried by streamed code execution result
+  /// blocks. Replaces the older
+  /// JSON-string-scanning approach (TAnthropicFileIdExtractor /
+  /// NormalizeJsonResponse), which was sensitive to the SDK's
+  /// internal RawJson concatenation format.
+  /// </summary>
+  TAnthropicStreamCapture = record
+  public
+    class procedure CaptureCodeExecutionFileIds(
+      const Event: TChatStream;
+      const Sink: TProc<string>); static;
+  end;
+
   TRequestSettingsBuilder = record
   public
     class procedure ApplyMaxTokens(
@@ -877,6 +891,77 @@ begin
 
   if Result and Assigned(ParamProc) then
     ParamProc(Writer.Format());
+end;
+
+{ TAnthropicStreamCapture }
+
+class procedure TAnthropicStreamCapture.CaptureCodeExecutionFileIds(
+  const Event: TChatStream;
+  const Sink: TProc<string>);
+{--- Reads file_ids out of streamed code_execution_tool_result and
+     bash_code_execution_tool_result blocks using the SDK's typed model,
+     instead of re-parsing the raw JSON aggregate. The SDK hydrates
+     ContentBlock.ToolContent at the content_block_start event (see
+     HydratePolymorphicContent), so by the time OnProgress fires for this
+     event the typed graph is already populated. }
+begin
+  if (not Assigned(Event)) or (not Assigned(Sink)) then
+    Exit;
+
+  if Event.EventType <> TEventType.content_block_start then
+    Exit;
+
+  try
+    var Block := Event.ContentBlock;
+    if not Assigned(Block) then
+      Exit;
+
+    var Tool := Block.ToolContent;
+    if not Assigned(Tool) then
+      Exit;
+
+    if Block.&Type = TContentBlockType.code_execution_tool_result then
+      begin
+        var CodeBlock := Tool.CodeExecutionToolResultBlock;
+        if (not Assigned(CodeBlock)) or (not CodeBlock.HasValue) then
+          Exit;
+
+        var CodeContent := CodeBlock.Content;
+        if not Assigned(CodeContent) then
+          Exit;
+
+        for var Item in CodeContent.Content do
+          begin
+            if not Assigned(Item) then
+              Continue;
+            Sink(Item.FileId);
+          end;
+
+        Exit;
+      end;
+
+    if Block.&Type = TContentBlockType.bash_code_execution_tool_result then
+      begin
+        var BashBlock := Tool.BashCodeExecutionToolResultBlock;
+        if (not Assigned(BashBlock)) or (not BashBlock.HasValue) then
+          Exit;
+
+        var BashContent := BashBlock.Content;
+        if not Assigned(BashContent) then
+          Exit;
+
+        for var Item in BashContent.Content do
+          begin
+            if not Assigned(Item) then
+              Continue;
+            Sink(Item.FileId);
+          end;
+      end;
+  except
+    {--- Defensive: a shape change in the SDK or an unexpected nil must
+         never tear down the stream. Worst case we miss a file_id and
+         the existing fallback (LoadFileResult) takes over. }
+  end;
 end;
 
 end.

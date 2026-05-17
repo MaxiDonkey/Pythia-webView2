@@ -71,6 +71,7 @@ interface
     - TServerToolUseBlockParam                     (server-executed tool call)
     - TMCPToolUseBlockParam                        (MCP tool call)
     - TToolResultBlockParam                        (tool result echo)
+    - TCodeExecutionToolResultBlockParam           (code-execution result echo)
     - TTextEditorCodeExecutionToolResultBlockParam (text-editor result echo)
     - TBashCodeExecutionToolResultBlockParam       (bash result echo)
     - TMCPToolResultBlockParam                     (MCP result echo)
@@ -121,10 +122,10 @@ interface
   session, parses each one as JSON and collects the values found in the
   top-level "beta" array. The result is the deduplicated union of every
   beta that was activated on any prior turn, in order of first
-  appearance, useful to keep the next request opted into the same
-  feature flags (skills, code execution, etc.) that the conversation was
-  bootstrapped with, without forcing the caller to track them
-  separately.
+  appearance. This is kept for diagnostics and legacy sessions; live
+  request beta handling is centralized in
+  Demo.Anthropic.Services.TAnthropicServices.BetaBuilder and the SDK 1.3
+  TBetaHeaderManager auto-detection path.
 
   Container reuse (skills / code execution)
   -----------------------------------------
@@ -135,7 +136,7 @@ interface
     {"type":"message_start","message":{"id":"...","container":{"id":"cont_..."}}}
 
   Subsequent turns must echo that container id back in their request
-  payload (TChatParams.Container) so the same container,s and therefore
+  payload (TChatParams.Container) so the same container, and therefore
   the same loaded skills, working directory, and execution state, is
   reused instead of provisioned again. IContext.LastContainerId scans the
   history backwards and returns the most recent non-empty container.id
@@ -160,6 +161,7 @@ type
     function GetHistory: TArray<TMessageParam>;
     function LastContainerId: string;
     function BetaExtract: TArray<string>;
+    function HasHistoricalCodeExecution: Boolean;
 
     function BuildMessages(
       const AState: TStateBuffer;
@@ -173,6 +175,7 @@ type
     bskServerToolUse,
     bskMCPToolUse,
     bskToolResult,
+    bskCodeExecutionToolResult,
     bskTextEditorCodeExecutionToolResult,
     bskBashCodeExecutionToolResult,
     bskMCPToolResult,
@@ -253,6 +256,9 @@ type
     function BuildToolResultBlock(
       const ASnapshot: TBlockSnapshot): TContentBlockParam;
 
+    function BuildCodeExecutionToolResultBlock(
+      const ASnapshot: TBlockSnapshot): TContentBlockParam;
+
     function BuildTextEditorCodeExecutionToolResultBlock(
       const ASnapshot: TBlockSnapshot): TContentBlockParam;
 
@@ -296,9 +302,20 @@ type
     /// Extracts the unique beta feature flags used by previous turns in the
     /// current session. Each completed turn's persisted JSON prompt is parsed,
     /// its top-level beta array is read when present, and values are returned
-    /// in order of first appearance.
+    /// in order of first appearance. Kept for diagnostics and legacy sessions;
+    /// the live beta-header path now relies on TBetaHeaderManager auto-detection
+    /// (see Demo.Anthropic.Services.TAnthropicServices.BetaBuilder) plus
+    /// HasHistoricalCodeExecution for tool re-registration decisions.
     /// </summary>
     function BetaExtract: TArray<string>;
+
+    /// <summary>
+    /// True when the current session history contains at least one
+    /// server-executed code_execution variant (plain, text_editor or bash).
+    /// Replaces the "beta" array scan that previously drove the
+    /// code_execution tool re-registration decision in ToolsBuilder.
+    /// </summary>
+    function HasHistoricalCodeExecution: Boolean;
 
     /// <summary>
     /// Builds the Anthropic message timeline by replaying the current session
@@ -321,7 +338,8 @@ class function TJsonResponseParser.MapKind(
 begin
   {--- Maps the wire-level block discriminator to the local enum. Any value
        outside the example scope falls back to bskUnknown so the emitter can
-       silently skip it. }
+       silently skip it.
+  }
   if SameText(ABlockType, 'text') then
     Exit(bskText);
 
@@ -336,6 +354,9 @@ begin
 
   if SameText(ABlockType, 'tool_result') then
     Exit(bskToolResult);
+
+  if SameText(ABlockType, 'code_execution_tool_result') then
+    Exit(bskCodeExecutionToolResult);
 
   if SameText(ABlockType, 'text_editor_code_execution_tool_result') then
     Exit(bskTextEditorCodeExecutionToolResult);
@@ -438,7 +459,8 @@ begin
   {--- Single-event router: trims, parses with TJsonReader, and dispatches
        on the top-level "type" field. Malformed entries are silently
        skipped so a partially corrupted stream still produces useful
-       output. }
+       output.
+  }
   if AEventJson.Trim.IsEmpty then
     Exit;
 
@@ -460,7 +482,8 @@ class function TJsonResponseParser.FlattenSorted(
 begin
   {--- TDictionary does not guarantee enumeration order. Flattening through
        a sorted index list keeps the emitted blocks in the same sequence as
-       in the original streamed response. }
+       in the original streamed response.
+  }
   Result := [];
 
   var Indices := TList<Integer>.Create;
@@ -483,7 +506,8 @@ begin
   {--- Splits the persisted JsonResponse on sLineBreak (TEventData.Aggregate
        always inserts that separator before each chunk) and processes each
        event individually. Empty lines, including the leading separator
-       are filtered out. }
+       are filtered out.
+  }
   Result := [];
   if AJsonResponse.Trim.IsEmpty then
     Exit;
@@ -492,7 +516,8 @@ begin
   try
     {--- Empty entries (the leading sLineBreak inserted by TEventData.Aggregate
          before the very first event, blank trailing tokens) are skipped by
-         ProcessEvent itself, so a plain Split without options is enough. }
+         ProcessEvent itself, so a plain Split without options is enough.
+    }
     for var Event in AJsonResponse.Split([sLineBreak]) do
       ProcessEvent(Event, Snapshots);
 
@@ -520,7 +545,8 @@ function TAnthropicContext.CurrentSession: TChatSession;
 begin
   {--- Resolves the active TChatSession through the browser-facing
        IPersistentChat. A nil chain is tolerated: it simply yields an empty
-       history downstream. }
+       history downstream.
+  }
   Result := nil;
   if not Assigned(FBrowser) then
     Exit;
@@ -540,7 +566,8 @@ begin
        The very last entry of TChatSession.Data is the in-flight prompt
        allocated by TPersistentChat.AddPrompt right before streaming starts;
        its Response is still empty at request build time, so it is excluded
-       from history replay. }
+       from history replay.
+  }
   Result := [];
   if not Assigned(AChat) then
     Exit;
@@ -568,7 +595,8 @@ function TAnthropicContext.BuildRedactedThinkingBlock(
 begin
   {--- Redacted thinking carries opaque server-side reasoning bytes through
        the "data" field. Replaying it tells the API the prior turn already
-       produced redacted reasoning so it can be linked into the next round. }
+       produced redacted reasoning so it can be linked into the next round.
+  }
   Result := TRedactedThinkingBlockParam.New
     .Data(ASnapshot.Data);
 end;
@@ -598,7 +626,8 @@ function TAnthropicContext.BuildMCPToolUseBlock(
   const ASnapshot: TBlockSnapshot): TContentBlockParam;
 begin
   {--- MCP tool use mirrors server_tool_use but adds the originating MCP
-       server name. The same defensive Input handling applies. }
+       server name. The same defensive Input handling applies.
+  }
   var Block := TMCPToolUseBlockParam.New
     .Id(ASnapshot.Id)
     .Name(ASnapshot.Name)
@@ -619,7 +648,8 @@ function TAnthropicContext.BuildToolResultBlock(
 begin
   {--- Tool result echo: only the textual "content" form is replayed here.
        Structured array content (TArray<TContentBlockParam>) would require
-       a recursive parse and is left out of this example. }
+       a recursive parse and is left out of this example.
+  }
   var Block := TToolResultBlockParam.New
     .ToolUseId(ASnapshot.ToolUseId)
     .Content(ASnapshot.Content);
@@ -630,13 +660,38 @@ begin
   Result := Block;
 end;
 
+function TAnthropicContext.BuildCodeExecutionToolResultBlock(
+  const ASnapshot: TBlockSnapshot): TContentBlockParam;
+begin
+  {--- Server-executed code result. SDK 1.3 registers the current
+        code_execution_20260120 tool, whose historical replay must echo
+        code_execution_tool_result blocks alongside the matching
+        server_tool_use block.
+
+        TCodeExecutionToolResultBlockParam exposes typed Content()
+        overloads only (success / error), so the demo keeps the same raw
+        JSON-preserving path used by bash and text-editor results.
+  }
+  var Block := TCodeExecutionToolResultBlockParam.New
+    .ToolUseId(ASnapshot.ToolUseId);
+
+  if not ASnapshot.Content.Trim.IsEmpty then
+    begin
+      var Inner := TJSONObject.ParseJSONValue(ASnapshot.Content);
+      if Assigned(Inner) then
+        Block.Add('content', Inner);
+    end;
+
+  Result := Block;
+end;
+
 function TAnthropicContext.BuildTextEditorCodeExecutionToolResultBlock(
   const ASnapshot: TBlockSnapshot): TContentBlockParam;
 begin
-  (*--- Server-executed text-editor result. The Messages API rejects any
+  {--- Server-executed text-editor result. The Messages API rejects any
         prior assistant turn that emitted a text_editor_code_execution
         server_tool_use without echoing back its matching
-        text_editor_code_execution_tool_result block on replay � the
+        text_editor_code_execution_tool_result block on replay - the
         request would fail with:
 
           messages.N: text_editor_code_execution tool use with id ...
@@ -652,7 +707,7 @@ begin
         inject it directly through the inherited TJSONParam.Add('content',
         ...) entry point. This preserves whatever inner type the server
         produced without requiring a per-variant builder here.
-  *)
+  }
   var Block := TTextEditorCodeExecutionToolResultBlockParam.New
     .ToolUseId(ASnapshot.ToolUseId);
 
@@ -669,7 +724,7 @@ end;
 function TAnthropicContext.BuildBashCodeExecutionToolResultBlock(
   const ASnapshot: TBlockSnapshot): TContentBlockParam;
 begin
-  (*--- Server-executed bash result. Same pairing constraint as the
+  {--- Server-executed bash result. Same pairing constraint as the
         text-editor variant: omitting it on replay triggers a 400 with
 
           messages.N: bash_code_execution tool use with id ... was found
@@ -683,7 +738,7 @@ begin
         TJSONParam.Add('content', ...) entry point. The server's original
         inner shape is preserved verbatim, which is all the API requires
         to acknowledge the prior tool_use.
-  *)
+  }
   var Block := TBashCodeExecutionToolResultBlockParam.New
     .ToolUseId(ASnapshot.ToolUseId);
 
@@ -700,7 +755,7 @@ end;
 function TAnthropicContext.BuildMCPToolResultBlock(
   const ASnapshot: TBlockSnapshot): TContentBlockParam;
 begin
-  (*--- MCP tool result. Pairs with a previously emitted mcp_tool_use:
+  {--- MCP tool result. Pairs with a previously emitted mcp_tool_use:
 
           messages.N: mcp_tool_use with id ... was found without a
           corresponding mcp_tool_result block.
@@ -720,7 +775,7 @@ begin
         the text-editor / bash variants where the error is conveyed via a
         dedicated inner type), so it is forwarded through IsError() when
         set on the snapshot.
-  *)
+  }
   var Block := TMCPToolResultBlockParam.New
     .ToolUseId(ASnapshot.ToolUseId);
 
@@ -747,22 +802,22 @@ end;
 function TAnthropicContext.BuildWebSearchToolResultBlock(
   const ASnapshot: TBlockSnapshot): TContentBlockParam;
 begin
-  (*--- Server-executed web search result. Pairs with a previously emitted
+  {--- Server-executed web search result. Pairs with a previously emitted
         web_search server_tool_use:
 
-          messages.N: `web_search` tool use with id ... was found without
+          messages.N: "web_search" tool use with id ... was found without
           a corresponding `web_search_tool_result` block.
 
         TWebSearchToolResultBlockParam exposes typed Content() overloads
         only (TArray<TWebSearchToolResultBlockItem> for the success path,
-        TWebSearchToolRequestError for the error path) � no string
+        TWebSearchToolRequestError for the error path) - no string
         fallback. Same shortcut as the text-editor / bash builders:
-        capture the raw `content_block.content` JSON in ASnapshot.Content,
+        capture the raw "content_block.content" JSON in ASnapshot.Content,
         parse it back as a TJSONValue (the wire shape is normally an
         array of search-result items) and inject it through the
         inherited TJSONParam.Add('content', ...) entry point so the
         original structure is replayed verbatim.
-  *)
+  }
   var Block := TWebSearchToolResultBlockParam.New
     .ToolUseId(ASnapshot.ToolUseId);
 
@@ -782,7 +837,8 @@ begin
   {--- Walks the parsed snapshots in original index order and emits the
        block subset covered by this example. Order matters because the
        Messages API expects reasoning blocks before content and tool_use
-       before any subsequent tool_result. }
+       before any subsequent tool_result.
+  }
   Result := [];
 
   for var S in TJsonResponseParser.Parse(ATurn.JsonResponse) do
@@ -803,6 +859,9 @@ begin
 
       bskToolResult:
         Result := Result + [BuildToolResultBlock(S)];
+
+      bskCodeExecutionToolResult:
+        Result := Result + [BuildCodeExecutionToolResultBlock(S)];
 
       bskTextEditorCodeExecutionToolResult:
         Result := Result + [BuildTextEditorCodeExecutionToolResultBlock(S)];
@@ -856,7 +915,7 @@ end;
 function TAnthropicContext.BuildContentBlockFromJson(
   const ASource: TJSONObject): TContentBlockParam;
 begin
-  (*--- Builds a content block whose JSON shape is taken verbatim from
+  {--- Builds a content block whose JSON shape is taken verbatim from
         ASource. Each pair is cloned so ASource keeps full ownership of
         its tree; the cloned values are then handed to TJSONParam.Add
         which transfers them into the block's internal TJSONObject.
@@ -865,7 +924,7 @@ begin
         which this example has no typed builder (container_upload,
         image/file sources, document/file sources, custom betas, ...)
         without forcing a per-kind dispatch.
-  *)
+  }
   var Block := TRawContentBlockParam.Create;
 
   for var Pair in ASource do
@@ -877,7 +936,7 @@ end;
 function TAnthropicContext.BuildHistoricalUserContent(
   const ATurn: TChatTurn): TArray<TContentBlockParam>;
 begin
-  (*--- Recovers the user-visible content blocks of a completed turn from
+  {--- Recovers the user-visible content blocks of a completed turn from
         TChatTurn.JsonPrompt, while filtering out blocks whose file_id may
         no longer be honored by the API.
 
@@ -900,7 +959,7 @@ begin
         An empty JsonPrompt or an unparsable payload yields an empty
         result, prompting AppendTurn to fall back to plain text via
         TChatTurn.Prompt.
-  *)
+  }
   Result := [];
 
   if ATurn.JsonPrompt.Trim.IsEmpty then
@@ -993,7 +1052,8 @@ begin
 
        The assistant side is rebuilt from the streamed JsonResponse when
        possible, and falls back to the aggregated Response text otherwise:
-       for example when the JSON buffer is empty or fully redacted. }
+       for example when the JSON buffer is empty or fully redacted.
+  }
   var UserContent := BuildHistoricalUserContent(ATurn);
   if Length(UserContent) > 0 then
     AMessages := AMessages.User(UserContent)
@@ -1061,13 +1121,13 @@ end;
 
 function TAnthropicContext.LastContainerId: string;
 begin
-  (*--- Scans completed turns from the most recent backwards and returns
+  {--- Scans completed turns from the most recent backwards and returns
         the first non-empty container.id encountered. The traversal stops
         as soon as one is found so an older turn never overrides a fresher
         provisioning. Empty when no historical turn ever allocated a
         container, the caller then provisions a fresh one without an
         explicit "id" field, exactly as on the first turn.
-  *)
+  }
   Result := '';
 
   var Turns := HistoryTurns(CurrentSession);
@@ -1083,7 +1143,7 @@ function TAnthropicContext.BetaExtract: TArray<string>;
 const
   BETA_PATH = 'beta';
 begin
-  (*--- Aggregates the unique beta flags requested across every previously
+  {--- Aggregates the unique beta flags requested across every previously
         sent turn of the current session.
 
         TChatTurn.JsonPrompt holds the formatted JSON of the request that
@@ -1105,7 +1165,7 @@ begin
         not carry a "beta" array (the regular case when no feature flag
         is in use) contribute nothing and are silently bypassed by the
         IsArrayNode guard.
-  *)
+  }
   Result := [];
 
   var Chat := CurrentSession;
@@ -1148,6 +1208,38 @@ begin
   end;
 end;
 
+function TAnthropicContext.HasHistoricalCodeExecution: Boolean;
+begin
+  {--- Detects whether any prior turn emitted a server_tool_use whose name
+        belongs to the code_execution family. The Messages API expects the
+        matching tool to remain registered on follow-up requests so the
+        historical server_tool_use / *_tool_result pair stays valid; without
+        re-registration the next call fails with:
+
+          messages.N: <variant>_code_execution tool use with id ... was
+          found without a corresponding tool definition.
+
+        The previous implementation relied on the "beta" array stored in
+        TChatTurn.JsonPrompt, which is only populated when the demo calls
+        Params.Beta(...) explicitly. The new BetaBuilder (hybrid mode) leaves
+        beta-header computation to TBetaHeaderManager whenever possible, so
+        "beta" can be absent from JsonPrompt. Scanning content blocks
+        directly keeps this signal independent from the beta-header
+        strategy.
+  }
+  Result := False;
+
+  var Chat := CurrentSession;
+  if not Assigned(Chat) then
+    Exit;
+
+  for var Turn in HistoryTurns(Chat) do
+    for var Snapshot in TJsonResponseParser.Parse(Turn.JsonResponse) do
+      if (Snapshot.Kind = bskServerToolUse) and
+         Snapshot.Name.ToLowerInvariant.Contains('code_execution') then
+        Exit(True);
+end;
+
 function TAnthropicContext.BuildMessages(
   const AState: TStateBuffer;
   const ACurrentContent: TArray<TContentBlockParam>): TArray<TMessageParam>;
@@ -1157,7 +1249,8 @@ begin
 
        AState is accepted to keep the door open for context-window aware
        trimming (model max tokens, summarization, etc.) without changing the
-       call site in TAnthropicServices. }
+       call site in TAnthropicServices.
+  }
   var Messages := Generation.MessageParts;
 
   for var Turn in HistoryTurns(CurrentSession) do

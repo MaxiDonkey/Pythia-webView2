@@ -3,12 +3,13 @@
 interface
 
 uses
-  System.SysUtils, System.IOUtils, System.JSON, Winapi.Windows,
+  System.SysUtils, System.IOUtils, System.JSON, System.Net.URLClient,
+  Winapi.Windows,
   WVPythia.Chat.Interfaces, WVPythia.Chat.ManagedFlow, WVPythia.TextFile.Helper,
   WVPythia.Strs, WVPythia.Vendors.Services, WVPythia.Chat.Consts,
   Anthropic, Anthropic.Types, Anthropic.Async.Promise, Anthropic.Helpers,
-  Anthropic.API.JsonSafeReader,
-  Demo.Anthropic.Helpers, Demo.Anthropic.Context, Demo.Anthropic.FileIds,
+  Anthropic.API.JsonSafeReader, Anthropic.Headers.Beta,
+  Demo.Anthropic.Helpers, Demo.Anthropic.Context,
   Demo.Anthropic.AsyncUtils, Demo.Anthropic.JsonResponse.Helper,
   Demo.Anthropic.Upload;
 
@@ -90,17 +91,16 @@ type
       const Effort: string;
       const Params: TChatParams);
 
-    function SkillBuilder(
+    procedure SkillBuilder(
       const AState: TStateBuffer;
-      const Params: TChatParams): TArray<string>;
+      const Params: TChatParams);
 
-    function MCPBuilder(
+    procedure MCPBuilder(
       const AState: TStateBuffer;
-      const Params: TChatParams): TArray<string>;
+      const Params: TChatParams);
 
     procedure BetaBuilder(
       const AState: TStateBuffer;
-      const BetaSkill, BetaMCP: TArray<string>;
       const Params: TChatParams);
 
     function HistoricalCodeExecutionRequired: Boolean;
@@ -108,7 +108,9 @@ type
     function BuildPayload(
       State: TStateBuffer): TChatParamProc;
 
-    function BuildSessionCallbacks(State: TStateBuffer): TSessionCallbacksStream;
+    function BuildSessionCallbacks(
+      State: TStateBuffer;
+      const AOnCodeExecutionFileId: TProc<string>): TSessionCallbacksStream;
 
     function BuildAndCheckPayload(
       State: TStateBuffer;
@@ -216,7 +218,16 @@ begin
   var Payload := BuildAndCheckPayload(State, JsonPayloadAsString);
   State.JsonRequest := JsonPayloadAsString;
 
-  var SessionCallbacks := BuildSessionCallbacks(State);
+  {--- Bridge the session callback’s copied State to the outer State used by finalizers.
+       OnProgress forwards each discovered file_id to State.OutputFileIds, deduplicated.
+  }
+  var CaptureFileId: TProc<string> :=
+    procedure (Id: string)
+    begin
+      State.AddOutputFileId(Id);
+    end;
+
+  var SessionCallbacks := BuildSessionCallbacks(State, CaptureFileId);
 
   {--- Only one completion path may finalize the turn. }
   var EmitGuard: IEmitGuard := TEmitGuard.Create(AOnFinalize);
@@ -225,6 +236,9 @@ begin
     .&Then(
       procedure (Value: TEventData)
       begin
+        {--- JsonResponse is kept for history/UI tracing only; control
+             flow no longer depends on parsing it.
+        }
         State.JsonResponse := TAnthropicJsonResponseHelper.NormalizeJsonResponse(Value.RawJson);
         CleanupInputFiles(State);
 
@@ -234,8 +248,8 @@ begin
             Exit;
           end;
 
-        var IDs := TArrayUtils.ArrayRemoveDuplicates(
-          TAnthropicFileIdExtractor.ExtractBashCodeExecutionOutputs(State.JsonResponse));
+        {--- IDs were collected live during streaming via the typed SDK model. }
+        var IDs := State.OutputFileIds;
 
         FClientUtils.WhenAllRetrieve(IDs)
           .&Then(
@@ -284,7 +298,8 @@ var
   DefaultExt: string;
 begin
   {--- When the server-side filename is missing, use the active skill name as
-       the best available default extension for the generated file. }
+       the best available default extension for the generated file.
+  }
   if TStateChecking.HasSkills(State) then
     begin
       var Skills := State.Integration.Skills;
@@ -311,7 +326,8 @@ procedure TAnthropicServices.FireDownloads(const IDs, Filenames: TArray<string>)
 begin
   {--- Each download handles its own async failure path. This try/except only
        guards synchronous dispatch errors so they cannot re-enter the parent
-       Then-body's exception branch. }
+       Then-body's exception branch.
+  }
   try
     for var I := Low(IDs) to High(IDs) do
       FClientUtils.AsyncDownloadAs(IDs[I], Filenames[I]);
@@ -329,7 +345,8 @@ procedure TAnthropicServices.HandleResolveFallback(
   const EmitGuard: IEmitGuard);
 begin
   {--- Filename resolution failed after file retrieval succeeded.
-       Fall back to JSON-derived file results so the turn can still finalize. }
+       Fall back to JSON-derived file results so the turn can still finalize.
+  }
   FBrowser.DisplayError(Format('Filename resolution failed: %s (%s)',
     [E.Message, E.ClassName]));
 
@@ -365,12 +382,14 @@ procedure TAnthropicServices.HandleChatError(
   const EmitGuard: IEmitGuard);
 begin
   {--- User cancellation is not treated as a failed turn: the partial streamed
-       response is promoted to final content so the UI and history stay aligned. }
+       response is promoted to final content so the UI and history stay aligned.
+  }
   if not E.Message.ToLowerInvariant.StartsWith(ABORTED_INDICATOR) then
     begin
       State.Error := True;
       State.ErrorMessage := E.Message;
       EmitGuard.TryEmit(TFinalizeData.FromException(E, State));
+
       Exit;
     end;
 
@@ -418,14 +437,15 @@ begin
       ToolsBuilder(State, Params);
       ThinkingBuilder(State, Effort, Params);
       OutputConfigBuilder(State, Effort, Params);
-      var BetaSkill := SkillBuilder(State, Params);
-      var BetaMCP := MCPBuilder(State, Params);
-      BetaBuilder(State, BetaSkill, BetaMCP, Params);
+      SkillBuilder(State, Params);
+      MCPBuilder(State, Params);
+      BetaBuilder(State, Params);
     end;
 end;
 
 function TAnthropicServices.BuildSessionCallbacks(
-  State: TStateBuffer): TSessionCallbacksStream;
+  State: TStateBuffer;
+  const AOnCodeExecutionFileId: TProc<string>): TSessionCallbacksStream;
 begin
   Result :=
     function : TPromiseChatStream
@@ -435,6 +455,12 @@ begin
       Result.OnProgress :=
         procedure (Sender: TObject; Event: TChatStream)
         begin
+          {--- Capture code-execution file_ids before delta filtering: content_block_start
+               carries them but is not IsEventSuitable. The caller-provided sink forwards them
+               to the outer state, since the local State is a value-type copy.
+          }
+          TAnthropicStreamCapture.CaptureCodeExecutionFileIds(Event, AOnCodeExecutionFileId);
+
           {--- Ignore events without usable live deltas. }
           if not IsEventSuitable(Event) then
             Exit;
@@ -474,27 +500,91 @@ begin
     end;
 end;
 
+function ExtractBetaTokens(const Headers: TNetHeaders): TArray<string>;
+begin
+  {--- TBetaHeaderManager.Build returns at most one anthropic-beta header with
+        comma-separated tokens. Flatten it to a string array so it can merge with
+        hybrid extras and be re-emitted via one Params.Beta() call.
+  }
+  Result := [];
+  for var H in Headers do
+    if SameText(H.Name, 'anthropic-beta') then
+      for var Token in H.Value.Split([',']) do
+        begin
+          var Trimmed := Token.Trim;
+          if not Trimmed.IsEmpty then
+            Result := Result + [Trimmed];
+        end;
+end;
+
 procedure TAnthropicServices.BetaBuilder(
   const AState: TStateBuffer;
-  const BetaSkill,
-  BetaMCP: TArray<string>;
   const Params: TChatParams);
+const
+  MESSAGES_ENDPOINT = '/v1/messages';
 begin
-  {--- Reuse beta flags already present in the conversation history, then merge
-       the flags required by the current skills, MCP servers, and Files API use. }
-  var Beta := FContext.BetaExtract;
+  {--- Hybrid beta strategy.
 
-  Beta := TArrayUtils.Merge(Beta, BetaSkill);
-  Beta := TArrayUtils.Merge(Beta, BetaMCP);
+        Params.Beta() disables SDK auto-detection, so we reproduce it by running
+        TBetaHeaderManager.Build on the finalized payload, then merge in tokens
+        the detector misses on /v1/messages:
+
+        - skills-2025-10-02: required when container.skills invokes a skill from
+        Messages, but auto-detected only on /v1/skills (the /v1/messages branch
+        of TBetaHeaderManager adds it via container.skills, but we keep this
+        local extra defensively for callers that do not exercise that path).
+
+        - files-api-2025-04-14: defensively added for Files-API file_id sources not
+        covered by container_upload detection.
+
+        - code-execution-2025-08-25: starting with SDK 1.3,
+        code_execution_20250825 and code_execution_20260120 are GA as tool
+        types, so the detector no longer auto-adds the token from the
+        registered tool. The container.skills branch still injects it because
+        Agent Skills require it. Outside skills, this demo echoes the token
+        only when prior code-execution history must be replayed, preserving
+        legacy "_20250825" server_tool_use / *_tool_result pairs.
+
+        - mcp-client is still auto-detected; only the three tokens above remain
+        local.
+  }
+  var Extras: TArray<string> := [];
+
+  if TStateChecking.HasSkills(AState) then
+    Extras := Extras + ['skills-2025-10-02'];
 
   if TStateChecking.HasAPIFileUsed(AState) then
-    Beta := TArrayUtils.Merge(Beta, ['files-api-2025-04-14']);
+    Extras := Extras + ['files-api-2025-04-14'];
 
-  if Length(Beta) = 0 then
+  {--- Current code_execution_20260120 is GA as a tool. The residual manual
+       token exists for replaying older code-execution history outside a
+       skills container, where the original request may have carried
+       code-execution-2025-08-25 explicitly. }
+  if HistoricalCodeExecutionRequired and not TStateChecking.HasSkills(AState) then
+    Extras := Extras + ['code-execution-2025-08-25'];
+
+  if Length(Extras) = 0 then
     Exit;
 
-  Params
-    .Beta(Beta);
+  {--- Take the payload as it stands right before the beta field is set.
+       BetaBuilder is invoked last in BuildPayload, so JSON reflects model,
+       messages, tools, container, mcp_servers, output_config, etc.
+  }
+  var PayloadJson := Params.JSON.ToJSON;
+
+  {--- TBetaHeaderManager.Build may raise on invalid beta combinations
+       (e.g., tool_search + input_examples, all-deferred tool sets). Letting
+       the exception propagate surfaces those at request build time.
+  }
+  var AutoTokens := ExtractBetaTokens(
+    TBetaHeaderManager.Build(MESSAGES_ENDPOINT, PayloadJson));
+
+  var Merged := TArrayUtils.Merge(AutoTokens, Extras);
+  Merged := TArrayUtils.ArrayRemoveDuplicates(Merged);
+
+  if Length(Merged) > 0 then
+    Params
+      .Beta(Merged);
 end;
 
 function TAnthropicServices.BuildAndCheckPayload(
@@ -506,7 +596,8 @@ begin
   var JsonPayload := TChatParams.Create;
   try
     {--- Validate payload generation on a disposable TChatParams instance.
-         Return a fresh payload proc so the SDK gets an untouched builder. }
+         Return a fresh payload proc so the SDK gets an untouched builder.
+    }
     Payload(JsonPayload);
 
     JsonPayloadAsString := JsonPayload.ToFormat();
@@ -531,7 +622,8 @@ begin
   {--- The service is built around three collaborators: the browser-facing UI
        abstraction, the Anthropic SDK client used for remote execution, and an
        injected IContext that owns the conversation-history projection used to
-       seed the messages array sent on each request. }
+       seed the messages array sent on each request.
+  }
   FBrowser := ABrowser;
   FContext := AContext;
 
@@ -553,18 +645,21 @@ begin
   {--- Demo wiring: plug the Anthropic implementation of IFileUploadService
        into the browser. The service uses the browser as the JS callback
        surface for upload status, and FClient as the Anthropic Files API
-       entry point. }
+       entry point.
+  }
   FBrowser.FileUploadService := TDownloadService.Create(FBrowser as IPythiaBrowser, FClient);
 
   {--- Ensure demo custom skills exist on Anthropic and patch local skill cards
-       with the server-side ids when they are created. }
+       with the server-side ids when they are created.
+  }
   SkillCustomRegister;
 end;
 
 function TAnthropicServices.IsEventSuitable(const Event: TChatStream): Boolean;
 begin
   {--- Minimal structural validation for streamed events before reading nested
-       delta fields. This isolates protocol-shape checks in one place. }
+       delta fields. This isolates protocol-shape checks in one place.
+  }
   Result :=
     Assigned(Event) and
     Assigned(Event.ContentBlockDelta) and
@@ -577,12 +672,15 @@ function TAnthropicServices.LoadFileResult(
 {--- Fallback path: invoked only when the Files.Retrieve aggregator fails or
      when the Then body of WhenAllRetrieve raises. Surfaces placeholder
      filenames so the turn can finalize; the actual download still recovers
-     the real server-side name on disk via AsyncFetchFile (retrieve+download). }
+     the real server-side name on disk via AsyncFetchFile (retrieve+download).
+}
 var
   DefaultExt: string;
 begin
-  var IDs := TArrayUtils.ArrayRemoveDuplicates(
-    TAnthropicFileIdExtractor.ExtractBashCodeExecutionOutputs(AState.JsonResponse));
+  {--- IDs collected live during streaming via the typed SDK model
+       (TAnthropicStreamCapture). Deduplication is handled at insertion.
+  }
+  var IDs := AState.OutputFileIds;
 
   if TStateChecking.HasSkills(AState) then
     begin
@@ -616,8 +714,8 @@ begin
     FClientUtils.AsyncDownloadAs(Ids[I], Filenames[I]);
 end;
 
-function TAnthropicServices.MCPBuilder(const AState: TStateBuffer;
-  const Params: TChatParams): TArray<string>;
+procedure TAnthropicServices.MCPBuilder(const AState: TStateBuffer;
+  const Params: TChatParams);
 var
   Content: string;
   Pat: string;
@@ -625,9 +723,11 @@ var
   SystemPrompt: string;
 begin
   {--- Expose only the MCP capabilities explicitly selected for this turn,
-       keeping Anthropic's tool surface aligned with the visible Pythia state. }
-  Result := [];
-
+       keeping Anthropic's tool surface aligned with the visible Pythia state.
+       No beta token is returned: TBetaHeaderManager auto-adds both
+       'mcp-client-2025-11-20' and 'advanced-tool-use-2025-11-20' from the
+       mcp_servers / mcp_toolset signals injected here.
+  }
   if not TStateChecking.HasMCP(AState) then
     Exit;
 
@@ -675,8 +775,6 @@ begin
 
   Params
     .McpServers(TJSONArrayHelper.ArrayOfStringToJSonArrayAsString(Contents));
-
-  Result := ['mcp-client-2025-11-20'];
 end;
 
 procedure TAnthropicServices.OutputConfigBuilder(const AState: TStateBuffer;
@@ -684,7 +782,8 @@ procedure TAnthropicServices.OutputConfigBuilder(const AState: TStateBuffer;
 begin
   {--- Keep Anthropic's response shape aligned with the current Pythia state:
        apply structured output and adaptive effort only when they are meaningful
-       for this turn. }
+       for this turn.
+  }
   TThinkingBuilder.TryGetThinkingConfigParam(AState, Effort,
     procedure
     begin
@@ -696,38 +795,57 @@ begin
     end);
 end;
 
-function TAnthropicServices.SkillBuilder(
+procedure TAnthropicServices.SkillBuilder(
   const AState: TStateBuffer;
-  const Params: TChatParams): TArray<string>;
+  const Params: TChatParams);
 var
   Item: TSkillItem;
+  ContainerId: string;
 begin
-  {--- Bind Anthropic skills to the capabilities selected for this turn.
+  {--- Bind Anthropic skills to the capabilities selected for this turn and
+       reuse the latest server-side container when history already created one.
        Skills are part of the visible Pythia state, not ambient model power:
        only enabled document/custom skills are exposed, so the request keeps
-       its execution surface explicit and scoped. }
-  Result := [];
+       its execution surface explicit and scoped. Starting with SDK 1.3,
+       TBetaHeaderManager injects "code-execution-2025-08-25",
+       "skills-2025-10-02" and "files-api-2025-04-14" when container.skills
+       is non-empty (AddBetasFromContainerSkills), and BetaBuilder
+       defensively echoes the same tokens as hybrid extras.
+  }
+  var HasSkills := TStateChecking.HasSkills(AState);
 
-  if not TStateChecking.HasSkills(AState) then
+  if Assigned(FContext) then
+    ContainerId := FContext.LastContainerId
+  else
+    ContainerId := '';
+
+  var CodeExecOn :=
+    TStateChecking.HasMCP(AState) or
+    HasSkills or
+    HistoricalCodeExecutionRequired;
+
+  if (not HasSkills) and (ContainerId.IsEmpty or not CodeExecOn) then
     Exit;
 
-  var Skills := TParamsGetter.GetSkills(AState);
+  var Container := Generation.CreateContainer;
+  if not ContainerId.IsEmpty then
+    Container.Id(ContainerId);
 
-  for Item in Skills do
+  if HasSkills then
     begin
-      with Generation do
-        Params
-          .Container( CreateContainer
-              .Skills( SkillParts
-                  .Add( Skill.CreateSkill(Item.SkillType)
-                      .SkillId(Item.ID)
-                      .Version(Item.Version)
-                  )
-              )
-          );
+      var Skills := TParamsGetter.GetSkills(AState);
+      var SkillList := Generation.SkillParts;
+
+      for Item in Skills do
+        SkillList := SkillList.Add(
+          Generation.Skill.CreateSkill(Item.SkillType)
+            .SkillId(Item.ID)
+            .Version(Item.Version));
+
+      Container.Skills(SkillList);
     end;
 
-   Result := ['code-execution-2025-08-25', 'skills-2025-10-02'];
+  Params.Container(Container);
 end;
 
 procedure TAnthropicServices.SkillCustomRegister;
@@ -754,7 +872,8 @@ begin
        Thinking is not just another sampling option: once enabled, it affects
        token budgeting, output effort and compatible request settings. This
        builder centralizes that decision so the rest of the Anthropic request
-       stays consistent with the visible Pythia state. }
+       stays consistent with the visible Pythia state.
+  }
   TThinkingBuilder.TryGetOutputConfig(AState, Effort,
     procedure
     begin
@@ -788,18 +907,19 @@ begin
 end;
 
 function TAnthropicServices.HistoricalCodeExecutionRequired: Boolean;
-const
-  CODE_EXECUTION_BETA = 'code-execution-2025-08-25';
 begin
-  {--- If a previous turn used the code-execution beta, Anthropic expects the
-       code_execution tool to be registered again on later requests. }
-  Result := False;
-  if not Assigned(FContext) then
-    Exit;
-
-  for var item in FContext.BetaExtract do
-    if SameText(item, CODE_EXECUTION_BETA) then
-      Exit(True);
+  {--- If a previous turn produced any code_execution server_tool_use,
+       Anthropic expects the matching tool to remain registered on later
+       requests; otherwise the historical *_tool_use / *_tool_result pair
+       triggers a 400 on the next call. Detection walks the replayed
+       assistant content blocks (IContext.HasHistoricalCodeExecution) rather
+       than the "beta" array of past JsonPrompt. ToolsBuilder re-registers
+       the GA code_execution_20260120 variant; older "_20250825" blocks
+       carried in historical content remain valid because BetaBuilder can
+       echo "code-execution-2025-08-25" as a hybrid extra when history
+       requires it outside a skills container.
+ }
+  Result := Assigned(FContext) and FContext.HasHistoricalCodeExecution;
 end;
 
 function TAnthropicServices.ToolsBuilder(const AState: TStateBuffer;
@@ -808,7 +928,8 @@ begin
   Result := Self;
 
   {--- Tools are enabled from both the current turn and the conversation history:
-       historical code execution must remain registered for API continuity. }
+       historical code execution must remain registered for API continuity.
+  }
   var WebSearchOn := AState.WebSearch;
   var SkillsOn    := TStateChecking.HasSkills(AState);
   var MCPOn       := TStateChecking.HasMCP(AState);
@@ -823,7 +944,7 @@ begin
     Tools := Tools + [Generation.Tool.CreateWebSearchTool20250305.MaxUses(5)];
 
   if CodeExecOn then
-    Tools := Tools + [Generation.Tool.Beta.CreateCodeExecutionTool20250825];
+    Tools := Tools + [Generation.Tool.Beta.CreateCodeExecutionTool20260120];
 
   if MCPOn then
     for var Item in TParamsGetter.GetMCPNames(AState) do
@@ -854,7 +975,8 @@ class function TFinalizeData.FromState(
 begin
   {--- Rebuilds the final payload from the local stream buffer.
        This path is used when the request stops before a canonical success
-       object is available, such as cancellation. }
+       object is available, such as cancellation.
+  }
   Result.Model := AState.Model;
   Result.Response := AState.TextBuffer;
   Result.Reasoning := AState.ThinkingBuffer;
@@ -874,7 +996,8 @@ class function TFinalizeData.FromSuccess(
 begin
   {--- On success, text and reasoning come from the SDK terminal event, while
        request/response JSON traces remain sourced from the local state buffer
-       accumulated during the stream. }
+       accumulated during the stream.
+  }
   Result.Model := AState.Model;
   Result.Response := AValue.Text;
   Result.Reasoning := AValue.Thought;
@@ -895,7 +1018,8 @@ begin
   {--- Persist the failure together with any text already streamed.
        The live UI reports the exception through the error channel, but the chat
        history is rebuilt later from Response only; without appending the message
-       here, reopening the session would hide why this turn stopped. }
+       here, reopening the session would hide why this turn stopped.
+  }
   Result.Model := AState.Model;
   if AState.TextBuffer.Trim.IsEmpty then
     Result.Response := E.Message
@@ -916,7 +1040,8 @@ procedure TFinalizeData.Emit(const AOnFinalize: TManagedItemFinalizeProc);
 begin
   {--- Converts the plain record into the managed result object expected by the
        surrounding flow infrastructure, then dispatches it through the caller's
-       finalize callback if one was provided. }
+       finalize callback if one was provided.
+  }
   if not Assigned(AOnFinalize) then
     Exit;
 

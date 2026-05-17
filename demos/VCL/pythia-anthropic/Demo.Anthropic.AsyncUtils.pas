@@ -169,6 +169,186 @@ begin
     end);
 end;
 
+{ TFileRetrievalContext }
+
+{--- Shared state for a WhenAllRetrieve run, lifted out of the promise
+     executor's activation record to break the ARC cycle that arose
+     when the prior implementation stored SettleResolve / SettleReject /
+     StartOne as local closure variables inside that ActRec:
+
+         AR.SettleResolve -> AR_SettleResolve_body -> AR
+
+     The body of each helper captured the outer AR (to access Names,
+     Settled, Resolve, Reject), while AR itself kept the helper's
+     interface as a local field. Once the inner Files.Retrieve promises
+     resolved and cleared their handler lists, no external reference
+     remained, but the in-AR cycle kept the whole graph alive forever.
+
+     Holding the state in a TInterfacedObject and having the inner
+     closures capture only an IInterface-typed Self breaks the cycle:
+     when the inner promises drop their handlers, the interface
+     refcount falls to zero and the context is destroyed in the
+     normal ARC path. }
+type
+  IFileRetrievalContext = interface
+    ['{9E2F4D71-1C68-4A8E-9F3C-1A2B3C4D5E60}']
+    function IsSettled: Boolean;
+    procedure CompleteOne(Idx: Integer; const Filename: string);
+    procedure SettleReject(const Msg: string);
+    procedure DispatchAll;
+  end;
+
+  TFileRetrievalContext = class(TInterfacedObject, IFileRetrievalContext)
+  private
+    FClient: IAnthropic;
+    FIDs: TArray<string>;
+    FNames: TArray<string>;
+    FRemaining: Integer;
+    FSettled: Boolean;
+    FResolve: TProc<TArray<string>>;
+    FReject: TProc<Exception>;
+    procedure DispatchOne(Idx: Integer);
+    procedure SettleResolve;
+  public
+    constructor Create(
+      const AClient: IAnthropic;
+      const AIDs: TArray<string>;
+      const AResolve: TProc<TArray<string>>;
+      const AReject: TProc<Exception>);
+    function IsSettled: Boolean;
+    procedure CompleteOne(Idx: Integer; const Filename: string);
+    procedure SettleReject(const Msg: string);
+    procedure DispatchAll;
+  end;
+
+constructor TFileRetrievalContext.Create(
+  const AClient: IAnthropic;
+  const AIDs: TArray<string>;
+  const AResolve: TProc<TArray<string>>;
+  const AReject: TProc<Exception>);
+begin
+  inherited Create;
+  FClient := AClient;
+  FIDs := AIDs;
+  SetLength(FNames, Length(AIDs));
+  FRemaining := Length(AIDs);
+  FSettled := False;
+  FResolve := AResolve;
+  FReject := AReject;
+end;
+
+function TFileRetrievalContext.IsSettled: Boolean;
+begin
+  Result := FSettled;
+end;
+
+procedure TFileRetrievalContext.SettleResolve;
+begin
+  if FSettled then
+    Exit;
+
+  FSettled := True;
+  if Assigned(FResolve) then
+    FResolve(FNames);
+end;
+
+procedure TFileRetrievalContext.SettleReject(const Msg: string);
+begin
+  if FSettled then
+    Exit;
+
+  FSettled := True;
+  try
+    if Assigned(FReject) then
+      FReject(Exception.Create(Msg));
+  except
+    {--- Last-resort guard: never let an exception escape the queued
+         lambda, otherwise the outer promise stays pending forever and
+         the surrounding flow never emits TFinalizeData. }
+  end;
+end;
+
+procedure TFileRetrievalContext.CompleteOne(
+  Idx: Integer;
+  const Filename: string);
+begin
+  if FSettled then
+    Exit;
+
+  FNames[Idx] := Filename;
+  Dec(FRemaining);
+
+  if FRemaining = 0 then
+    SettleResolve;
+end;
+
+procedure TFileRetrievalContext.DispatchOne(Idx: Integer);
+var
+  Ctx: IFileRetrievalContext;
+  LocalId: string;
+begin
+  {--- Capture Self as an explicit IInterface so the inner async
+       closures keep the context alive via refcount; do NOT let the
+       compiler capture the bare Self pointer, which would not pin
+       the object's lifetime and could leave a dangling reference. }
+  Ctx := Self;
+  LocalId := FIDs[Idx];
+
+  try
+    FClient.Files.AsyncAwaitRetrieve(LocalId)
+      .&Then(
+        procedure (Value: TFile)
+        begin
+          if Ctx.IsSettled then
+            Exit;
+
+          try
+            Ctx.CompleteOne(Idx, Value.Filename);
+          except
+            on E: Exception do
+              Ctx.SettleReject(Format('Files.Retrieve Then handler failed: %s (%s)',
+                [E.Message, E.ClassName]));
+          end;
+        end)
+      .&Catch(
+        procedure (E: Exception)
+        begin
+          {--- Capture message immediately; CloneException on E later
+               (inside the framework) may dereference a freed object
+               or fail on an exotic class. Stringifying here is safe. }
+          Ctx.SettleReject(Format('Files.Retrieve [%s] failed: %s (%s)',
+            [LocalId, E.Message, E.ClassName]));
+        end);
+  except
+    on E: Exception do
+      Ctx.SettleReject(Format('Files.Retrieve [%s] sync setup failed: %s (%s)',
+        [LocalId, E.Message, E.ClassName]));
+  end;
+end;
+
+procedure TFileRetrievalContext.DispatchAll;
+begin
+  if FRemaining = 0 then
+    begin
+      SettleResolve;
+      Exit;
+    end;
+
+  try
+    for var I := Low(FIDs) to High(FIDs) do
+      begin
+        if FSettled then
+          Break;
+
+        DispatchOne(I);
+      end;
+  except
+    on E: Exception do
+      SettleReject(Format('WhenAllRetrieve loop failed: %s (%s)',
+        [E.Message, E.ClassName]));
+  end;
+end;
+
 { TAnthropicClientUtils }
 
 function TAnthropicClientUtils.WhenAllRetrieve(
@@ -176,113 +356,10 @@ function TAnthropicClientUtils.WhenAllRetrieve(
 begin
   Result := TPromise<TArray<string>>.Create(
     procedure (Resolve: TProc<TArray<string>>; Reject: TProc<Exception>)
-    var
-      Names: TArray<string>;
-      Remaining: Integer;
-      Settled: Boolean;
     begin
-      SetLength(Names, Length(IDs));
-      Remaining := Length(IDs);
-      Settled := False;
-
-      if Remaining = 0 then
-        begin
-          Resolve(Names);
-          Exit;
-        end;
-
-      {--- Single-point settle helpers. All paths (sync setup failure, async
-           Then/Catch bodies) must funnel through these so the outer promise
-           is guaranteed to settle exactly once even when something throws
-           outside the framework's try/except (e.g. CloneException failure on
-           an exotic exception class, or a throw in a queued &Catch lambda). }
-      var SettleResolve: TProc :=
-        procedure
-        begin
-          if Settled then
-            Exit;
-
-          Settled := True;
-          Resolve(Names);
-        end;
-
-      var SettleReject: TProc<string> :=
-        procedure (Msg: string)
-        begin
-          if Settled then
-            Exit;
-
-          Settled := True;
-          try
-            Reject(Exception.Create(Msg));
-          except
-            {--- Last-resort guard: never let an exception escape the queued
-                 lambda, otherwise the outer promise stays pending forever and
-                 the surrounding flow never emits TFinalizeData. }
-          end;
-        end;
-
-      {--- Per-iteration capture: an inline var Idx := I inside the for body
-           does NOT create a fresh slot per iteration in Delphi (the begin..end
-           block is shared by all iterations), so all inner closures would
-           capture the same Idx and only the last index would be written.
-           Wrapping the body in an anonymous method called with I as a
-           parameter forces a new stack frame per call, giving each closure
-           its own captured Idx. }
-      var StartOne: TProc<Integer> :=
-        procedure (Idx: Integer)
-        begin
-          try
-            FClient.Files.AsyncAwaitRetrieve(IDs[Idx])
-              .&Then(
-                procedure (Value: TFile)
-                begin
-                  if Settled then
-                    Exit;
-
-                  try
-                    Names[Idx] := Value.Filename;
-                    Dec(Remaining);
-
-                    if Remaining = 0 then
-                      SettleResolve();
-                  except
-                    on E: Exception do
-                      SettleReject(Format('Files.Retrieve Then handler failed: %s (%s)',
-                        [E.Message, E.ClassName]));
-                  end;
-                end)
-              .&Catch(
-                procedure (E: Exception)
-                begin
-                  {--- Capture message immediately; CloneException on E later
-                       (inside the framework) may dereference a freed object
-                       or fail on an exotic class. Stringifying here is safe. }
-                  var Msg := Format('Files.Retrieve [%s] failed: %s (%s)',
-                    [IDs[Idx], E.Message, E.ClassName]);
-
-                  SettleReject(Msg);
-                end);
-          except
-            on E: Exception do
-              SettleReject(Format('Files.Retrieve [%s] sync setup failed: %s (%s)',
-                [IDs[Idx], E.Message, E.ClassName]));
-          end;
-        end;
-
-      try
-        for var I := Low(IDs) to High(IDs) do
-          begin
-            if Settled then
-              Break;
-
-            StartOne(I);
-          end;
-      except
-        on E: Exception do
-          SettleReject(Format('WhenAllRetrieve loop failed: %s (%s)',
-            [E.Message, E.ClassName]));
-      end;
+      var Ctx: IFileRetrievalContext :=
+        TFileRetrievalContext.Create(FClient, IDs, Resolve, Reject);
+      Ctx.DispatchAll;
     end);
 end;
 

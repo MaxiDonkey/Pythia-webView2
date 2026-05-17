@@ -7,7 +7,9 @@ uses
   Vcl.Styles,
   Demo.Anthropic.AsyncUtils in 'Demo.Anthropic.AsyncUtils.pas',
   Demo.Anthropic.JsonResponse.Helper in 'Demo.Anthropic.JsonResponse.Helper.pas',
-  Demo.Anthropic.Upload in 'Demo.Anthropic.Upload.pas';
+  Demo.Anthropic.Upload in 'Demo.Anthropic.Upload.pas',
+  WVPythia.Clipboard.Vcl in '..\..\..\source\WVPythia.Clipboard.Vcl.pas',
+  WVPythia.Clipboard.Fmx in '..\..\..\source\WVPythia.Clipboard.Fmx.pas';
 
 {$R *.res}
 

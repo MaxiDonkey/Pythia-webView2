@@ -21,6 +21,8 @@ uses
 const
   STILL_IN_PROGRESS_ERROR =
     'Requests are still in progress. #10Please wait for them to complete before closing the application.';
+  APP_CAPTION =
+    'Pythia-Webview2 (%s) - Anthropic vendor Demo - Delphi Anthropic SDK version %s';
 
 type
   TForm1 = class(TForm)
@@ -69,6 +71,8 @@ begin
   {$IFDEF DEBUG}
   ReportMemoryLeaksOnShutdown := True;
   {$ENDIF}
+
+  Caption := Format(APP_CAPTION, [TVCLPythia.Version, Anthropic.Version]);
 
   Width := 1350;
   Height := 770;
