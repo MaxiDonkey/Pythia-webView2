@@ -757,7 +757,7 @@ end;
 procedure TOrchestratorEventHandler.CompleteTurn(const Turn: TChatTurn;
   const AResult: TManagedItemLLMResult);
 begin
-    if not Assigned(Turn) or not Assigned(AResult) then
+  if not Assigned(Turn) or not Assigned(AResult) then
     Exit;
 
   Turn.Model := AResult.Model;
@@ -769,6 +769,7 @@ begin
   Turn.ReponseImages := AResult.ImageList;
   Turn.ReponseAudio := AResult.AudioList;
   Turn.ReponseVideo := AResult.VideoList;
+  Turn.DisplayBlocks := CloneChatDisplayBlocks(AResult.DisplayBlocks);
 
   if Assigned(FPersistentChat) then
     FPersistentChat.SaveToFile();

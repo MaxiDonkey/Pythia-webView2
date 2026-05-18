@@ -10,6 +10,44 @@ type
   TChatSession = class;
   TChatSessionList = class;
   TPersistentChat = class;
+  TChatDisplayBlock = class;
+
+  TChatDisplayItem = class(TJSONResource)
+  strict private
+    FTitle: string;
+    FText: string;
+    FUrl: string;
+    FPath: string;
+    FMimeType: string;
+  public
+    function Clone: TChatDisplayItem;
+
+    property Title: string read FTitle write FTitle;
+    property Text: string read FText write FText;
+    property Url: string read FUrl write FUrl;
+    property Path: string read FPath write FPath;
+    property MimeType: string read FMimeType write FMimeType;
+  end;
+
+  TChatDisplayBlock = class(TJSONResource)
+  strict private
+    FKind: string;
+    FTitle: string;
+    FText: string;
+    FUrl: string;
+    FItems: TArray<TChatDisplayItem>;
+    procedure SetItems(const Value: TArray<TChatDisplayItem>);
+  public
+    function Clone: TChatDisplayBlock;
+
+    property Kind: string read FKind write FKind;
+    property Title: string read FTitle write FTitle;
+    property Text: string read FText write FText;
+    property Url: string read FUrl write FUrl;
+    property Items: TArray<TChatDisplayItem> read FItems write SetItems;
+
+    destructor Destroy; override;
+  end;
 
   TGUIDBuilder = record
     class function Create(const Brace: Boolean = False): string; static;
@@ -81,6 +119,8 @@ type
     FReponseImages: TArray<string>;
     FReponseAudio: TArray<string>;
     FReponseVideo: TArray<string>;
+    FDisplayBlocks: TArray<TChatDisplayBlock>;
+    procedure SetDisplayBlocks(const Value: TArray<TChatDisplayBlock>);
   public
     property Id: string read FId write FId;
     property Index: Integer read FIndex write FIndex;
@@ -99,6 +139,9 @@ type
     property ReponseImages: TArray<string> read FReponseImages write FReponseImages;
     property ReponseAudio: TArray<string> read FReponseAudio write FReponseAudio;
     property ReponseVideo: TArray<string> read FReponseVideo write FReponseVideo;
+    property DisplayBlocks: TArray<TChatDisplayBlock> read FDisplayBlocks write SetDisplayBlocks;
+
+    destructor Destroy; override;
   end;
 
   TChatSession = class(TJSONListParams<TChatSession, TChatTurn>)
@@ -247,10 +290,160 @@ type
     class function CreatePersistentChat(const FileName: string = ''): IPersistentChat; static;
   end;
 
+function CloneChatDisplayBlocks(
+  const Values: TArray<TChatDisplayBlock>): TArray<TChatDisplayBlock>;
+
+procedure FreeChatDisplayBlocks(var Values: TArray<TChatDisplayBlock>);
+
+function ChatDisplayBlocksToJson(
+  const Values: TArray<TChatDisplayBlock>): string;
+
 implementation
 
 uses
-  System.DateUtils, System.Generics.Defaults, WVPythia.Strings.Escape;
+  System.DateUtils, System.Generics.Defaults, System.JSON,
+  WVPythia.Strings.Escape;
+
+procedure FreeChatDisplayItems(var Values: TArray<TChatDisplayItem>);
+begin
+  for var Item in Values do
+    Item.Free;
+  Values := nil;
+end;
+
+function ChatDisplayItemToJson(const Item: TChatDisplayItem): TJSONObject;
+begin
+  Result := TJSONObject.Create;
+
+  if not Assigned(Item) then
+    Exit;
+
+  if not Item.Title.IsEmpty then
+    Result.AddPair('title', Item.Title);
+
+  if not Item.Text.IsEmpty then
+    Result.AddPair('text', Item.Text);
+
+  if not Item.Url.IsEmpty then
+    Result.AddPair('url', Item.Url);
+
+  if not Item.Path.IsEmpty then
+    Result.AddPair('path', Item.Path);
+
+  if not Item.MimeType.IsEmpty then
+    Result.AddPair('mimeType', Item.MimeType);
+end;
+
+function ChatDisplayBlockToJson(const Block: TChatDisplayBlock): TJSONObject;
+begin
+  Result := TJSONObject.Create;
+
+  if not Assigned(Block) then
+    Exit;
+
+  if not Block.Kind.IsEmpty then
+    Result.AddPair('kind', Block.Kind);
+
+  if not Block.Title.IsEmpty then
+    Result.AddPair('title', Block.Title);
+
+  if not Block.Text.IsEmpty then
+    Result.AddPair('text', Block.Text);
+
+  if not Block.Url.IsEmpty then
+    Result.AddPair('url', Block.Url);
+
+  if Length(Block.Items) > 0 then
+    begin
+      var Items := TJSONArray.Create;
+      for var Item in Block.Items do
+        Items.AddElement(ChatDisplayItemToJson(Item));
+      Result.AddPair('items', Items);
+    end;
+end;
+
+function CloneChatDisplayBlocks(
+  const Values: TArray<TChatDisplayBlock>): TArray<TChatDisplayBlock>;
+begin
+  SetLength(Result, Length(Values));
+  for var I := Low(Values) to High(Values) do
+    if Assigned(Values[I]) then
+      Result[I] := Values[I].Clone;
+end;
+
+procedure FreeChatDisplayBlocks(var Values: TArray<TChatDisplayBlock>);
+begin
+  for var Item in Values do
+    Item.Free;
+  Values := nil;
+end;
+
+function ChatDisplayBlocksToJson(
+  const Values: TArray<TChatDisplayBlock>): string;
+begin
+  var Blocks := TJSONArray.Create;
+  try
+    for var Item in Values do
+      Blocks.AddElement(ChatDisplayBlockToJson(Item));
+    Result := Blocks.ToJSON;
+  finally
+    Blocks.Free;
+  end;
+end;
+
+{ TChatDisplayItem }
+
+function TChatDisplayItem.Clone: TChatDisplayItem;
+begin
+  Result := TChatDisplayItem.Create;
+  Result.Title := Title;
+  Result.Text := Text;
+  Result.Url := Url;
+  Result.Path := Path;
+  Result.MimeType := MimeType;
+end;
+
+{ TChatDisplayBlock }
+
+function TChatDisplayBlock.Clone: TChatDisplayBlock;
+begin
+  Result := TChatDisplayBlock.Create;
+  Result.Kind := Kind;
+  Result.Title := Title;
+  Result.Text := Text;
+  Result.Url := Url;
+
+  SetLength(Result.FItems, Length(FItems));
+  for var I := Low(FItems) to High(FItems) do
+    if Assigned(FItems[I]) then
+      Result.FItems[I] := FItems[I].Clone;
+end;
+
+destructor TChatDisplayBlock.Destroy;
+begin
+  FreeChatDisplayItems(FItems);
+  inherited;
+end;
+
+procedure TChatDisplayBlock.SetItems(const Value: TArray<TChatDisplayItem>);
+begin
+  FreeChatDisplayItems(FItems);
+  FItems := Value;
+end;
+
+{ TChatTurn }
+
+destructor TChatTurn.Destroy;
+begin
+  FreeChatDisplayBlocks(FDisplayBlocks);
+  inherited;
+end;
+
+procedure TChatTurn.SetDisplayBlocks(const Value: TArray<TChatDisplayBlock>);
+begin
+  FreeChatDisplayBlocks(FDisplayBlocks);
+  FDisplayBlocks := Value;
+end;
 
 { TChatSessionRuntime }
 
@@ -484,6 +677,7 @@ begin
   ATarget.ReponseImages := System.Copy(ASource.ReponseImages);
   ATarget.ReponseAudio := System.Copy(ASource.ReponseAudio);
   ATarget.ReponseVideo := System.Copy(ASource.ReponseVideo);
+  ATarget.DisplayBlocks := CloneChatDisplayBlocks(ASource.DisplayBlocks);
 end;
 
 function TPersistentChat.BuildRecentChatSortItems: TArray<TChatSortItem>;

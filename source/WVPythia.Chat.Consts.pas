@@ -82,6 +82,27 @@ const
   DISPLAY_TEMPLATE =
     'window.display(%s, %s, %s, %s);';
 
+  DISPLAY_BLOCK_TEMPLATE =
+    'window.DisplayTemplate.displayBlock(%s, %s, %s);';
+
+  DISPLAY_BLOCK_STREAM_TEMPLATE =
+    'window.DisplayTemplate.displayBlockStream(%s, %s, %s, %s);';
+
+  DISPLAY_BLOCKS_TEMPLATE =
+    'window.DisplayTemplate.displayBlocks(%s, %s);';
+
+  DISPLAY_BLOCK_KIND_ASSISTANT = 'assistant';
+  DISPLAY_BLOCK_KIND_REASONING = 'reasoning';
+  DISPLAY_BLOCK_KIND_STATUS = 'status';
+  DISPLAY_BLOCK_KIND_TOOL_STATUS = 'toolStatus';
+  DISPLAY_BLOCK_KIND_TOOL_OUTPUT = 'toolOutput';
+  DISPLAY_BLOCK_KIND_TOOL_ERROR = 'toolError';
+  DISPLAY_BLOCK_KIND_SOURCE_STATUS = 'sourceStatus';
+  DISPLAY_BLOCK_KIND_SOURCE_LIST = 'sourceList';
+  DISPLAY_BLOCK_KIND_SOURCE_DOCUMENT = 'sourceDocument';
+  DISPLAY_BLOCK_KIND_CITATION_LIST = 'citationList';
+  DISPLAY_BLOCK_KIND_ARTIFACT_LIST = 'artifactList';
+
   DEFER_AFTER_DISPLAY_STREAM =
     '(function(){' +
     'const run=function(){%s};' +

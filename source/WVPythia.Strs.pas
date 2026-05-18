@@ -108,6 +108,8 @@ var
     'Incorrect number of arguments for /%s %s (received %d)';
   S_COMMAND_NO_PLUGIN_FOR: string =
     'No plugin for /%s';
+  S_TOOL_GROUP_LABEL: string =
+    'Tools used';
 
 implementation
 
@@ -287,6 +289,11 @@ begin
     JSONObject.AsString(
     'more.command_no_plugin_for',
     S_COMMAND_NO_PLUGIN_FOR);
+
+  S_TOOL_GROUP_LABEL :=
+    JSONObject.AsString(
+    'display.toolGroup.label',
+    S_TOOL_GROUP_LABEL);
 
   {--- Add custom translation }
   if Assigned(CustomProc) then
