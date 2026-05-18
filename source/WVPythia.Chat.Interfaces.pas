@@ -385,6 +385,95 @@ type
       const AThink: string;
       Scroll: Boolean = True): Boolean; overload;
 
+    function DisplayBlock(
+      const Kind: string;
+      const PayloadJson: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayBlockStream(
+      const Kind: string;
+      const Delta: string;
+      const PayloadJson: string = '';
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayBlocks(
+      const BlocksJson: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayAssistant(
+      const AText: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayAssistantStream(
+      const ADelta: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayReasoning(
+      const AText: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayReasoningStream(
+      const ADelta: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayStatus(
+      const AText: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayToolStatus(
+      const AText: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayToolOutput(
+      const ATitle: string;
+      const AText: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayToolOutputStart(
+      const ATitle: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayToolOutputStream(
+      const ADelta: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayToolError(
+      const ATitle: string;
+      const AText: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayToolErrorStart(
+      const ATitle: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayToolErrorStream(
+      const ADelta: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplaySourceStatus(
+      const AText: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplaySourceList(
+      const ATitle: string;
+      const SourcesJson: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplaySourceDocument(
+      const ATitle: string;
+      const AUrl: string;
+      const AText: string = '';
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayCitationList(
+      const CitationsJson: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayArtifactList(
+      const ATitle: string;
+      const ArtifactsJson: string;
+      Scroll: Boolean = True): Boolean;
+
     function DisplayMedia(Kind: TDisplayKind;
       const Value: TArray<string>;
       Scroll: Boolean = True): Boolean; overload;

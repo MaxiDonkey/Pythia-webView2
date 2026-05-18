@@ -601,6 +601,95 @@ type
       const AThink: string;
       Scroll: Boolean = True): Boolean; overload;
 
+    function DisplayBlock(
+      const Kind: string;
+      const PayloadJson: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayBlockStream(
+      const Kind: string;
+      const Delta: string;
+      const PayloadJson: string = '';
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayBlocks(
+      const BlocksJson: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayAssistant(
+      const AText: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayAssistantStream(
+      const ADelta: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayReasoning(
+      const AText: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayReasoningStream(
+      const ADelta: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayStatus(
+      const AText: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayToolStatus(
+      const AText: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayToolOutput(
+      const ATitle: string;
+      const AText: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayToolOutputStart(
+      const ATitle: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayToolOutputStream(
+      const ADelta: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayToolError(
+      const ATitle: string;
+      const AText: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayToolErrorStart(
+      const ATitle: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayToolErrorStream(
+      const ADelta: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplaySourceStatus(
+      const AText: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplaySourceList(
+      const ATitle: string;
+      const SourcesJson: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplaySourceDocument(
+      const ATitle: string;
+      const AUrl: string;
+      const AText: string = '';
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayCitationList(
+      const CitationsJson: string;
+      Scroll: Boolean = True): Boolean;
+
+    function DisplayArtifactList(
+      const ATitle: string;
+      const ArtifactsJson: string;
+      Scroll: Boolean = True): Boolean;
+
     function DisplayMedia(Kind: TDisplayKind;
       const Value: TArray<string>;
       Scroll: Boolean = True): Boolean; overload;
@@ -946,6 +1035,39 @@ uses
 
 {$ENDREGION}
 
+function BuildDisplayBlockPayload(
+  const ATitle: string;
+  const AText: string = '';
+  const AUrl: string = '';
+  const AItemsJson: string = ''): string;
+var
+  Obj: TJSONObject;
+  Items: TJSONValue;
+begin
+  Obj := TJSONObject.Create;
+  try
+    if not ATitle.IsEmpty then
+      Obj.AddPair('title', ATitle);
+
+    if not AText.IsEmpty then
+      Obj.AddPair('text', AText);
+
+    if not AUrl.IsEmpty then
+      Obj.AddPair('url', AUrl);
+
+    if not AItemsJson.Trim.IsEmpty then
+      begin
+        Items := TJSONObject.ParseJSONValue(AItemsJson);
+        if Assigned(Items) then
+          Obj.AddPair('items', Items);
+      end;
+
+    Result := Obj.ToJSON;
+  finally
+    Obj.Free;
+  end;
+end;
+
 { TInterfacedFMXPythia }
 
 procedure TInterfacedFMXPythia.BeginUpdate;
@@ -1080,6 +1202,253 @@ begin
 
   if Scroll and Result then
     ScrollToAfterEnd(GetHeightAfter(0), False);
+end;
+
+function TInterfacedFMXPythia.DisplayBlock(
+  const Kind, PayloadJson: string;
+  Scroll: Boolean): Boolean;
+var
+  Script: string;
+  IsToolKind: Boolean;
+begin
+  if not IsBrowserReady then
+    Exit(False);
+
+  Script := Format(DISPLAY_BLOCK_TEMPLATE, [
+    TEscapeHelper.EscapeJSString(FPromptCount.ToString),
+    TEscapeHelper.EscapeJSString(Kind),
+    TEscapeHelper.EscapeJSString(PayloadJson)
+  ]);
+
+  {--- Mirror VCL.WVPythia.Chat: tool-related blocks must skip the
+       runAfterStreams gate so their DOM insertion order matches the
+       order of the underlying stream events. Otherwise toolOutput
+       deltas (non-deferred) race ahead of their toolStatus parent
+       (deferred) and the entire group ends up at the very end of the
+       message with broken titles. }
+  IsToolKind :=
+    SameText(Kind, DISPLAY_BLOCK_KIND_TOOL_STATUS) or
+    SameText(Kind, DISPLAY_BLOCK_KIND_TOOL_OUTPUT) or
+    SameText(Kind, DISPLAY_BLOCK_KIND_TOOL_ERROR);
+
+  if IsToolKind then
+    Result := ExecuteScript(Script)
+  else
+    Result := ExecuteScript(
+      DeferAfterDisplayStream(Script, FPromptCount)
+    );
+
+  if Scroll and Result then
+    ScrollToAfterEnd(GetHeightAfter(0), False);
+end;
+
+function TInterfacedFMXPythia.DisplayBlocks(
+  const BlocksJson: string;
+  Scroll: Boolean): Boolean;
+begin
+  if not IsBrowserReady then
+    Exit(False);
+
+  Result := ExecuteScript(
+    Format(DISPLAY_BLOCKS_TEMPLATE, [
+      TEscapeHelper.EscapeJSString(FPromptCount.ToString),
+      TEscapeHelper.EscapeJSString(BlocksJson)
+    ])
+  );
+
+  if Scroll and Result then
+    ScrollToAfterEnd(GetHeightAfter(0), False);
+end;
+
+function TInterfacedFMXPythia.DisplayBlockStream(
+  const Kind, Delta, PayloadJson: string;
+  Scroll: Boolean): Boolean;
+begin
+  if not IsBrowserReady then
+    Exit(False);
+
+  Result := ExecuteScript(
+    Format(DISPLAY_BLOCK_STREAM_TEMPLATE, [
+      TEscapeHelper.EscapeJSString(FPromptCount.ToString),
+      TEscapeHelper.EscapeJSString(Kind),
+      TEscapeHelper.EscapeJSString(Delta),
+      TEscapeHelper.EscapeJSString(PayloadJson)
+    ])
+  );
+
+  if Scroll and Result then
+    ScrollToAfterEnd(GetHeightAfter(0), True);
+end;
+
+function TInterfacedFMXPythia.DisplayAssistant(
+  const AText: string;
+  Scroll: Boolean): Boolean;
+begin
+  Result := DisplayBlock(
+    DISPLAY_BLOCK_KIND_ASSISTANT,
+    BuildDisplayBlockPayload('', AText),
+    Scroll
+  );
+end;
+
+function TInterfacedFMXPythia.DisplayAssistantStream(
+  const ADelta: string;
+  Scroll: Boolean): Boolean;
+begin
+  Result := DisplayBlockStream(DISPLAY_BLOCK_KIND_ASSISTANT, ADelta, '', Scroll);
+end;
+
+function TInterfacedFMXPythia.DisplayArtifactList(
+  const ATitle, ArtifactsJson: string;
+  Scroll: Boolean): Boolean;
+begin
+  Result := DisplayBlock(
+    DISPLAY_BLOCK_KIND_ARTIFACT_LIST,
+    BuildDisplayBlockPayload(ATitle, '', '', ArtifactsJson),
+    Scroll
+  );
+end;
+
+function TInterfacedFMXPythia.DisplayCitationList(
+  const CitationsJson: string;
+  Scroll: Boolean): Boolean;
+begin
+  Result := DisplayBlock(
+    DISPLAY_BLOCK_KIND_CITATION_LIST,
+    BuildDisplayBlockPayload('', '', '', CitationsJson),
+    Scroll
+  );
+end;
+
+function TInterfacedFMXPythia.DisplayReasoning(
+  const AText: string;
+  Scroll: Boolean): Boolean;
+begin
+  Result := DisplayBlock(
+    DISPLAY_BLOCK_KIND_REASONING,
+    BuildDisplayBlockPayload('', AText),
+    Scroll
+  );
+end;
+
+function TInterfacedFMXPythia.DisplayReasoningStream(
+  const ADelta: string;
+  Scroll: Boolean): Boolean;
+begin
+  Result := DisplayBlockStream(DISPLAY_BLOCK_KIND_REASONING, ADelta, '', Scroll);
+end;
+
+function TInterfacedFMXPythia.DisplaySourceDocument(
+  const ATitle, AUrl, AText: string;
+  Scroll: Boolean): Boolean;
+begin
+  Result := DisplayBlock(
+    DISPLAY_BLOCK_KIND_SOURCE_DOCUMENT,
+    BuildDisplayBlockPayload(ATitle, AText, AUrl),
+    Scroll
+  );
+end;
+
+function TInterfacedFMXPythia.DisplaySourceList(
+  const ATitle, SourcesJson: string;
+  Scroll: Boolean): Boolean;
+begin
+  Result := DisplayBlock(
+    DISPLAY_BLOCK_KIND_SOURCE_LIST,
+    BuildDisplayBlockPayload(ATitle, '', '', SourcesJson),
+    Scroll
+  );
+end;
+
+function TInterfacedFMXPythia.DisplaySourceStatus(
+  const AText: string;
+  Scroll: Boolean): Boolean;
+begin
+  Result := DisplayBlock(
+    DISPLAY_BLOCK_KIND_SOURCE_STATUS,
+    BuildDisplayBlockPayload('', AText),
+    Scroll
+  );
+end;
+
+function TInterfacedFMXPythia.DisplayStatus(
+  const AText: string;
+  Scroll: Boolean): Boolean;
+begin
+  Result := DisplayBlock(
+    DISPLAY_BLOCK_KIND_STATUS,
+    BuildDisplayBlockPayload('', AText),
+    Scroll
+  );
+end;
+
+function TInterfacedFMXPythia.DisplayToolError(
+  const ATitle, AText: string;
+  Scroll: Boolean): Boolean;
+begin
+  Result := DisplayBlock(
+    DISPLAY_BLOCK_KIND_TOOL_ERROR,
+    BuildDisplayBlockPayload(ATitle, AText),
+    Scroll
+  );
+end;
+
+function TInterfacedFMXPythia.DisplayToolErrorStart(
+  const ATitle: string;
+  Scroll: Boolean): Boolean;
+begin
+  Result := DisplayBlock(
+    DISPLAY_BLOCK_KIND_TOOL_ERROR,
+    BuildDisplayBlockPayload(ATitle),
+    Scroll
+  );
+end;
+
+function TInterfacedFMXPythia.DisplayToolErrorStream(
+  const ADelta: string;
+  Scroll: Boolean): Boolean;
+begin
+  Result := DisplayBlockStream(DISPLAY_BLOCK_KIND_TOOL_ERROR, ADelta, '', Scroll);
+end;
+
+function TInterfacedFMXPythia.DisplayToolOutput(
+  const ATitle, AText: string;
+  Scroll: Boolean): Boolean;
+begin
+  Result := DisplayBlock(
+    DISPLAY_BLOCK_KIND_TOOL_OUTPUT,
+    BuildDisplayBlockPayload(ATitle, AText),
+    Scroll
+  );
+end;
+
+function TInterfacedFMXPythia.DisplayToolOutputStart(
+  const ATitle: string;
+  Scroll: Boolean): Boolean;
+begin
+  Result := DisplayBlock(
+    DISPLAY_BLOCK_KIND_TOOL_OUTPUT,
+    BuildDisplayBlockPayload(ATitle),
+    Scroll
+  );
+end;
+
+function TInterfacedFMXPythia.DisplayToolOutputStream(
+  const ADelta: string;
+  Scroll: Boolean): Boolean;
+begin
+  Result := DisplayBlockStream(DISPLAY_BLOCK_KIND_TOOL_OUTPUT, ADelta, '', Scroll);
+end;
+
+function TInterfacedFMXPythia.DisplayToolStatus(
+  const AText: string;
+  Scroll: Boolean): Boolean;
+begin
+  Result := DisplayBlock(
+    DISPLAY_BLOCK_KIND_TOOL_STATUS,
+    BuildDisplayBlockPayload('', AText),
+    Scroll
+  );
 end;
 
 function TInterfacedFMXPythia.DisplayError(const Value: string): Boolean;
@@ -1304,7 +1673,11 @@ begin
         PromptMedia(dkFile, Turn.PromptKnowledgeSearch, False);
         Prompt(Turn.Prompt);
 
-        Display(Turn.Response, Turn.Reasoning, False);
+        if Length(Turn.DisplayBlocks) > 0 then
+          DisplayBlocks(ChatDisplayBlocksToJson(Turn.DisplayBlocks), False)
+        else
+          Display(Turn.Response, Turn.Reasoning, False);
+
         DisplayMedia(dkimages, Turn.ReponseImages, False);
         DisplayMedia(dkAudio, Turn.ReponseAudio, False);
         DisplayMedia(dkVideo, Turn.ReponseVideo, False);

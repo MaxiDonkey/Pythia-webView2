@@ -16,8 +16,8 @@
         max-width:38%;
         position:relative;
         overflow:hidden;
-        background: var(--reasoning-bg, linear-gradient(145deg,#2a2a2a,#222222));
-        border:1px solid var(--reasoning-border, rgba(255,255,255,0.06));
+        background: var(--bg-main, transparent) !important;
+        border:none !important;
         border-radius:10px;
         padding:12px 16px;
         color:var(--reasoning-text,#d8dbe0);
