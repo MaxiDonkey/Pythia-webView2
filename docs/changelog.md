@@ -1,3 +1,35 @@
+#### 2026 May 19 - version 0.9.4
+
+- Switch the VCL_Anthropic stream flow to event callbacks
+
+Refactored `demos\VCL\pythia-anthropic\Demo.Anthropic.Services.pas` so `TAnthropicServices.AsyncAwaitStreamChat` now uses typed stream event callbacks instead of a session callback. Assistant, reasoning, tool-use, and tool-result deltas now update the same state captured by finalization, which gives the demo a more suitable flow for building display blocks from the live Anthropic stream.
+
+<br>
+
+- Add Anthropic display block aggregation to the demo
+
+Added `demos\VCL\pythia-anthropic\Demo.Anthropic.DisplayBlocks.pas` to translate Anthropic stream events into ordered Pythia display blocks. This block aggregation is the demo-level feature that ties together the new WebView2 `displayBlock` bridge and the persisted turn `DisplayBlocks` support described below, so live rendering, replay, and saved chat sessions all use the same structured representation.
+
+<br>
+
+- Update DelphiAnthropic dependency for typed stream events
+
+Updated the embedded `dependencies\DelphiAnthropic` SDK dependency to version `1.3.1`. The VCL_Anthropic demo now relies on the SDK stream event callbacks and snapshots used by the display block aggregator.
+
+<br>
+
+- Add structured display block support to the chat bridge
+
+Extended `assets\scripts\DisplayTemplate.js` with the new `displayBlock`, `displayBlockStream`, and `displayBlocks` helpers, then exposed the matching Delphi API through `source\WVPythia.Chat.Interfaces.pas`, `source\VCL.WVPythia.Chat.pas`, and `source\FMX.WVPythia.Chat.pas`. The chat bridge can now render assistant, reasoning, status, tool, source, citation, artifact, and media blocks through the same WebView2 display pipeline used for full and streamed responses.
+
+<br>
+
+- Persist display blocks in chat session turns
+
+Updated the chat session turn model so structured display blocks are carried with the persisted session data. `TChatTurn` now owns cloned `TChatDisplayBlock` and `TChatDisplayItem` instances, exposes helpers for cloning, freeing, and JSON conversion, and `TOrchestratorEventHandler.CompleteTurn` now copies `AResult.DisplayBlocks` into the completed turn before saving the session.
+
+<br>
+
 #### 2026 May 17 - version 0.9.3
 
 - Update DelphiAnthropic dependency for the VCL_Anthropic demo
