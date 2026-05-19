@@ -4,19 +4,13 @@ uses
   Vcl.Forms,
   Main in 'Main.pas' {Form1},
   Vcl.Themes,
-  Vcl.Styles,
-  Demo.Anthropic.AsyncUtils in 'Demo.Anthropic.AsyncUtils.pas',
-  Demo.Anthropic.JsonResponse.Helper in 'Demo.Anthropic.JsonResponse.Helper.pas',
-  Demo.Anthropic.Upload in 'Demo.Anthropic.Upload.pas',
-  WVPythia.Clipboard.Vcl in '..\..\..\source\WVPythia.Clipboard.Vcl.pas',
-  WVPythia.Clipboard.Fmx in '..\..\..\source\WVPythia.Clipboard.Fmx.pas';
+  Vcl.Styles;
 
 {$R *.res}
 
 begin
   Application.Initialize;
   Application.MainFormOnTaskbar := True;
-  TStyleManager.TrySetStyle('Windows11 MineShaft');
   Application.CreateForm(TForm1, Form1);
   Application.Run;
 end.
