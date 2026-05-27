@@ -206,7 +206,7 @@ const
     'window.StopVideo();';
 
   LOGO_ANIMATION_SHOW =
-    'ActivityShow({ placement: "top-center", size: 24, gap: 12, offsetX: 0, offsetY: 0 });';
+    'ActivityShow({ placement: "top-left", size: 24, gap: 12, offsetX: 50, offsetY: 0 });';
 
   LOGO_ANIMATION_HIDE =
     'if (window.ActivityHide) ActivityHide();';
@@ -367,6 +367,12 @@ const
   SET_INPUT_WELCOME =
     '{"type":"setInputWelcome", "text":"%s"}';
 
+  FOLDER_SELECTED_TEMPLATE =
+    '{"type":"folder-selected","folder_path":"%s"}';
+
+  FOLDER_STATE_TEMPLATE =
+    '{"type":"folder-state","state":%s}';
+
   ERROR_DISPLAY_TEMPLATE =
     '{"type":"erreur","text":"%s"}';
 
@@ -420,6 +426,9 @@ const
 
   CARD_SETTINGS_VISIBILITY =
     '{"type":"cards-settings-visibity","value":%s}';
+
+  CARD_CHIP_AGENT_SHOW =
+    'window.setIntegrationAgents([{id:"%s",name:"%s"}]);';
 
   FILE_DRAWER_OPEN =
     '{"type": "files-drawer-open"}';
@@ -533,8 +542,12 @@ const
     '    "mediaTextToSpeech": true,' + sLineBreak +
     '    "custom": true,' + sLineBreak +
     '    "systemPrompt": true,' + sLineBreak +
-    '    "model": true' + sLineBreak +
+    '    "model": true,' + sLineBreak +
+    '    "project": true' + sLineBreak +
     '}';
+
+  JSON_PROJECTS_DEFAULT =
+    '[]';
 
   JSON_CUSTOM_TEMPLATE_JS_DEFAULT =
     '{' + sLineBreak +

@@ -14,9 +14,12 @@
 > **Pythia-Webview2** is built on **Microsoft WebView2**.  
 > In practice, this means the component targets **Windows desktop applications**.
 
+## NEW
+- [Managed Agents walkthrough (part 1)](demos/VCL/pythia-anthropic/Agent-sample-doc.md#discovering-the-agent-cards)
+
 ## Table of Contents
 
-- [Changelog](docs/changelog.md)
+- [Changelog](docs/changelog.md#2026-may-27---version-095)
 - [Get started in a few lines](#get-started-in-a-few-lines)
 - [What Pythia-Webview2 is](#what-pythia-webview2-is)
 - [Vendor-native by design](#vendor-native-by-design)
@@ -191,6 +194,8 @@ Minimal hosts to copy when starting a new application — no vendor wired, no pl
 |-|-|-|
 |`PythiaSampleVCL`|[`demos/VCL/pythia-sample`](demos/VCL/pythia-sample)|[Discovery walkthrough](docs/PythiaSampleVCL.md) — UI tour and component capabilities|
 |`VCL_Anthropic`|[`demos/VCL/pythia-anthropic`](demos/VCL/pythia-anthropic)|[Anthropic vendor integration](docs/VCL_Anthropic.md) — connects **Pythia-Webview2** to a real LLM via the Delphi Anthropic SDK with native async/await support|
+
+[NEW]: **Managed Agents walkthrough (part 1).** Tour of the five agent cards pre-installed in `VCL_Anthropic`, taken in order — from a single web-research agent to a multi-agent flow that edits a sandbox copy and applies the diff to the local folder after user confirmation. A second part will follow with advanced agent usage — MCP servers, skills, Vault and memories integrated inside an agent card. See [`Agent-sample-doc.md`](demos/VCL/pythia-anthropic/Agent-sample-doc.md#discovering-the-agent-cards).
 
 ### Plugin demos
 

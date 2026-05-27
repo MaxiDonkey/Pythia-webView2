@@ -189,6 +189,15 @@ type
     property FileId: string read FFileId write FFileId;
   end;
 
+  TProjectState = class
+  private
+    FDisplayName: string;
+    FFullPath: string;
+  public
+    property DisplayName: string read FDisplayName write FDisplayName;
+    property FullPath: string read FFullPath write FFullPath;
+  end;
+
   TIntegration = class
   private
     FFunction: TArray<TListItems>;
@@ -230,6 +239,7 @@ type
     FThinking: string;
     FDeepResearch: Boolean;
     FWebSearch: Boolean;
+    FProject: TProjectState;
     FFiles: TArray<TMediaItem>;
     FImages: TArray<TMediaItem>;
     FKnowledgeSearch: TArray<TMediaItem>;
@@ -249,6 +259,7 @@ type
     property Thinking: string read FThinking write FThinking;
     property DeepResearch: Boolean read FDeepResearch write FDeepResearch;
     property WebSearch: Boolean read FWebSearch write FWebSearch;
+    property Project: TProjectState read FProject write FProject;
     property Files: TArray<TMediaItem> read FFiles write FFiles;
     property Images: TArray<TMediaItem> read FImages write FImages;
     property KnowledgeSearch: TArray<TMediaItem> read FKnowledgeSearch write FKnowledgeSearch;
@@ -505,6 +516,8 @@ begin
     Item.Free;
   for var Item in FKnowledgeSearch do
     Item.Free;
+  if Assigned(FProject) then
+    FProject.Free;
   if Assigned(FIntegration) then
     FIntegration.Free;
   for var Item in FCustom do

@@ -3,14 +3,14 @@ unit VCL.WVPythia.Chat;
 interface
 
 uses
-  Winapi.ActiveX,
+  Winapi.Windows, Winapi.ActiveX,
 
   System.SysUtils, System.classes, System.UITypes, System.IOUtils, System.JSON,
 
-  Vcl.Forms, Vcl.Controls, Vcl.ExtCtrls, Vcl.Dialogs, Vcl.Graphics, Vcl.Themes,
+  Vcl.Forms, Vcl.Controls, Vcl.ExtCtrls, Vcl.Dialogs, Vcl.FileCtrl, Vcl.Graphics, Vcl.Themes,
 
   WVPythia.Template.Manager, WVPythia.Capabilities.Manager, WVPythia.Strings.Escape,
-  WVPythia.Chat.EventManager, WVPythia.Chat.Interfaces, WVPythia.Chat.Consts,
+  WVPythia.Chat.DecisionDlg, WVPythia.Chat.EventManager, WVPythia.Chat.Interfaces, WVPythia.Chat.Consts,
   WVPythia.TextFile.Helper, WVPythia.Types, WVPythia.Types.EnumWire, WVPythia.Adapter,
   WVPythia.ChatSession.Controller, WVPythia.Strs, WVPythia.Command.Registry,
   WVPythia.Command.Plugin, WVPythia.ApiKey.Service.Intf, WVPythia.Command.Plugin.ApiKey,
@@ -39,6 +39,7 @@ type
   public
     constructor Create;
     function Execute(const Filter: string; const index: Integer; out FileName: string): Boolean;
+    function ExecuteFolder(out FolderPath: string): Boolean;
   end;
 
   TCastHelp = record
@@ -51,6 +52,7 @@ type
     function IsJSScriptInjected: Boolean; virtual; abstract;
     function ExecuteScript(const Script: string): Boolean; virtual; abstract;
     function PostWebMessageAsJson(const Script: string): Boolean; overload; virtual; abstract;
+    function PostWebMessageAsJson(const Script: string; const ExpectedType: string): Boolean; overload; virtual; abstract;
     procedure UpdateEnabledButtons; virtual; abstract;
     procedure Initialize; virtual; abstract;
     procedure BridgeInitialize; virtual; abstract;
@@ -91,6 +93,7 @@ type
     function GetCustomCardsFileName: string;
 
     function GetCapabilitiesFileName: string;
+    function GetProjectsFileName: string;
     function GetExchangeDebugFileName: string;
     function GetAPIKeyNamesFileName: string;
     function GetCustomJSFileName: string;
@@ -146,7 +149,19 @@ type
     property Capabilities: ICapabilities read FCapabilities write FCapabilities;
   end;
 
-  TVCLPythiaJSTemplatesManager = class(TVCLPythiaCapabilitiesManager)
+  TVCLPythiaProjectsManager = class(TVCLPythiaCapabilitiesManager)
+  private
+    function NormalizeProjectsJson(const JsonAsString: string;
+      out NormalizedJson: string): Boolean;
+    procedure SaveDefaultProjectsFile;
+  protected
+    function ProjectsInitialization: Boolean;
+    function ProjectsStateUpdate(const JsonAsString: string): Boolean;
+  public
+    constructor Create(AOwner: TComponent); override;
+  end;
+
+  TVCLPythiaJSTemplatesManager = class(TVCLPythiaProjectsManager)
   private
     FTemplateProvider: ITemplateProvider;
   protected
@@ -266,7 +281,7 @@ type
     function IsJSScriptInjected: Boolean; override;
     function ExecuteScript(const Script: string): Boolean; override;
     function PostWebMessageAsJson(const Script: string): Boolean; overload; override;
-    function PostWebMessageAsJson(const Script: string; const ExpectedType: string): Boolean; overload;
+    function PostWebMessageAsJson(const Script: string; const ExpectedType: string): Boolean; overload; override;
 
     procedure LockNavigation;
     procedure BridgeInitialize; override;
@@ -403,8 +418,12 @@ type
     procedure SetPersistentChat(const Value: IPersistentChat);
   protected
     FOnChatSessionAutoRename: TProc<string, string>;
+    FOnAfterSessionReloaded: TProc<string>;
     function GetOnChatSessionAutoRename: TProc<string, string>;
     procedure SetOnChatSessionAutoRename(const Value: TProc<string, string>);
+
+    function GetOnAfterSessionReloaded: TProc<string>;
+    procedure SetOnAfterSessionReloaded(const Value: TProc<string>);
 
     function ChatSessionDrawerOpen: Boolean;
     function ChatSessionDrawerClose: Boolean;
@@ -521,6 +540,7 @@ type
     FStreamContent: string;
     FStreamThink: string;
     FFirstChunkContent: Boolean;
+    FWebDecisionDlgBroker: TWebDecisionDlgBroker;
 
     function ClearBrowserDisplay: Boolean;
     procedure ClearCurrentChatSession;
@@ -556,6 +576,12 @@ type
     function UpdateFileDrawer: Boolean;
   public
     constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+
+    function WebDecisionDlg(
+      const ARequest: TWebDecisionDlgRequest;
+      const ATimeoutMS: Cardinal = WEB_DECISION_DLG_INFINITE): TWebDecisionDlgResult;
+    function ResolveWebDecisionDlgResponse(const AJson: string): Boolean;
 
     procedure Clear;
     procedure SetFocus;
@@ -719,6 +745,10 @@ type
 
     /// <summary>Occurs when a chat session requests automatic title generation.</summary>
     property OnChatSessionAutoRename: TProc<string, string> read GetOnChatSessionAutoRename write SetOnChatSessionAutoRename;
+
+    /// <summary>Occurs after a chat session has been re-displayed, carrying the active chat ID.
+    /// Use it to restore any session-derived UI state (e.g. managed-agent chip).</summary>
+    property OnAfterSessionReloaded: TProc<string> read GetOnAfterSessionReloaded write SetOnAfterSessionReloaded;
 
     /// <summary>Allows the host to register custom command plugins during browser initialization.</summary>
     property OnRegisterCommandPlugins: TProc read FOnRegisterCommandPlugins write FOnRegisterCommandPlugins;
@@ -1126,6 +1156,7 @@ begin
   FStreamContent := '';
   FStreamThink := '';
   FReasoningVisible := False;
+  FWebDecisionDlgBroker := TWebDecisionDlgBroker.Create;
 
   {--- Complete event manager dependency injection only after the concrete
        browser instance and all inherited services are fully initialized. }
@@ -1139,6 +1170,45 @@ begin
      must provide its own IChatManagedItemDialogService implementation via
      the public property `ServiceAdapter`. Its setter forwards to
      FEventManager.SetServiceAdapter once the value is supplied. }
+end;
+
+destructor TInterfacedVCLPythia.Destroy;
+begin
+  FWebDecisionDlgBroker.Free;
+  inherited Destroy;
+end;
+
+function TInterfacedVCLPythia.ResolveWebDecisionDlgResponse(
+  const AJson: string): Boolean;
+begin
+  Result :=
+    Assigned(FWebDecisionDlgBroker) and
+    FWebDecisionDlgBroker.ResolveResponse(AJson);
+end;
+
+function TInterfacedVCLPythia.WebDecisionDlg(
+  const ARequest: TWebDecisionDlgRequest;
+  const ATimeoutMS: Cardinal): TWebDecisionDlgResult;
+begin
+  if GetCurrentThreadId = MainThreadID then
+    raise EVCLPythiaException.Create(
+      'WebDecisionDlg cannot be called synchronously from the UI thread.');
+
+  Result := FWebDecisionDlgBroker.ExecuteSync(
+    ARequest,
+    function(Json: string): Boolean
+    var
+      Posted: Boolean;
+    begin
+      Posted := False;
+      TThread.Synchronize(nil,
+        procedure
+        begin
+          Posted := PostWebMessageAsJson(Json, WEB_DECISION_DLG_REQUEST_TYPE);
+        end);
+      Result := Posted;
+    end,
+    ATimeoutMS);
 end;
 
 function TInterfacedVCLPythia.DeferAfterDisplayStream(
@@ -1203,6 +1273,9 @@ begin
   if not IsBrowserReady then
     Exit(False);
 
+  {--- Try to hide the reasoning bubble }
+  ReasoningHide;
+
   Script := Format(DISPLAY_BLOCK_TEMPLATE, [
     TEscapeHelper.EscapeJSString(FPromptCount.ToString),
     TEscapeHelper.EscapeJSString(Kind),
@@ -1210,14 +1283,10 @@ begin
   ]);
 
   {--- Tool-related blocks (toolStatus / toolOutput / toolError) are
-       emitted while the assistant text is still streaming. Deferring
-       them until the display-stream queue drains would (a) push them
-       to the very end of the message and (b) break the ordering
-       contract with DisplayBlockStream (which is not deferred): result
-       deltas would arrive before their matching status entry exists in
-       the DOM, get attached to the wrong tool-call entry, and lose
-       their command title. Run them immediately so they land in the
-       same chronological slot as their stream peers. }
+       emitted while assistant text may still be queued in JavaScript.
+       Send them to the browser immediately; DisplayTemplate coordinates
+       the small visual deferral together with DisplayBlockStream so tool
+       outputs still attach to their matching status entry. }
   IsToolKind :=
     SameText(Kind, DISPLAY_BLOCK_KIND_TOOL_STATUS) or
     SameText(Kind, DISPLAY_BLOCK_KIND_TOOL_OUTPUT) or
@@ -1258,6 +1327,9 @@ function TInterfacedVCLPythia.DisplayBlockStream(
 begin
   if not IsBrowserReady then
     Exit(False);
+
+  {--- Try to hide the reasoning bubble }
+  ReasoningHide;
 
   Result := ExecuteScript(
     Format(DISPLAY_BLOCK_STREAM_TEMPLATE, [
@@ -1489,6 +1561,15 @@ end;
 function TInterfacedVCLPythia.DisplayChatSession: Boolean;
 begin
   Result := InternalDisplaySession;
+
+  {--- Notify the host AFTER the full re-render so any session-derived UI
+       state (e.g. managed-agent chip restoration) can be re-applied atop
+       the freshly rebuilt content. Fires regardless of which renderer
+       path InternalDisplaySession took (default or OnRenderChatContent). }
+  if Assigned(FOnAfterSessionReloaded) and
+     Assigned(FPersistentChat) and
+     Assigned(FPersistentChat.CurrentChat) then
+    FOnAfterSessionReloaded(FPersistentChat.CurrentChat.Id);
 end;
 
 function TInterfacedVCLPythia.DisplaySpacer(const AHeight: Integer): Boolean;
@@ -1711,7 +1792,7 @@ begin
     ])
   );
 
-  ReasoningShow;
+//  ReasoningShow;
 end;
 
 function TInterfacedVCLPythia.PromptMedia(Kind: TDisplayKind;
@@ -1844,15 +1925,15 @@ begin
   inherited Create(AOwner);
 
   var Folder := GetMediaFolder;
-  if not DirectoryExists(Folder) then
+  if not System.SysUtils.DirectoryExists(Folder) then
     MkDir(Folder);
 
   Folder := GetAppSubFolder;
-  if not DirectoryExists(Folder) then
+  if not System.SysUtils.DirectoryExists(Folder) then
     MkDir(Folder);
 
   Folder := GetAppJsonSupportFolder;
-  if not DirectoryExists(Folder) then
+  if not System.SysUtils.DirectoryExists(Folder) then
     MkDir(Folder);
 
   FBrowser := TWVBrowser.Create(Self);
@@ -1987,6 +2068,7 @@ begin
   ExecuteScript(TemplateProvider.ChatFooterTemplate);
   ExecuteScript(TemplateProvider.CardSelectorTemplate);
   ExecuteScript(TemplateProvider.ActivityLogoTemplate);
+  ExecuteScript(TemplateProvider.WebDecisionTemplate);
   ExecuteScript(TemplateProvider.InputDialogTemplate);
 
   {--- Load and inject custom the JS templates }
@@ -2206,6 +2288,61 @@ begin
   Result := PostWebMessageAsJson(Capabilities.ToJSON);
 end;
 
+{ TVCLPythiaProjectsManager }
+
+constructor TVCLPythiaProjectsManager.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  SaveDefaultProjectsFile;
+end;
+
+function TVCLPythiaProjectsManager.ProjectsInitialization: Boolean;
+begin
+  var Filename := GetProjectsFileName;
+  if not FileExists(Filename) then
+    Exit(False);
+
+  var RawProjectsJsonString := TFileIOHelper.LoadFromFile(Filename);
+  var ProjectsJsonString := '';
+  if not NormalizeProjectsJson(RawProjectsJsonString, ProjectsJsonString) then
+    TFileIOHelper.SaveToFile(Filename, ProjectsJsonString);
+
+  Result := PostWebMessageAsJson(
+    Format(FOLDER_STATE_TEMPLATE, [ProjectsJsonString]),
+    'folder-state'
+  );
+end;
+
+function TVCLPythiaProjectsManager.NormalizeProjectsJson(
+  const JsonAsString: string; out NormalizedJson: string): Boolean;
+begin
+  NormalizedJson := JSON_PROJECTS_DEFAULT;
+
+  var JsonValue := TJSONObject.ParseJSONValue(JsonAsString);
+  try
+    Result := JsonValue is TJSONArray;
+    if Result then
+      NormalizedJson := JsonValue.Format(4);
+  finally
+    JsonValue.Free;
+  end;
+end;
+
+procedure TVCLPythiaProjectsManager.SaveDefaultProjectsFile;
+begin
+  if not FileExists(GetProjectsFileName) then
+    TFileIOHelper.SaveToFile(GetProjectsFileName, JSON_PROJECTS_DEFAULT);
+end;
+
+function TVCLPythiaProjectsManager.ProjectsStateUpdate(
+  const JsonAsString: string): Boolean;
+begin
+  var ProjectsJsonString := '';
+  Result := NormalizeProjectsJson(JsonAsString, ProjectsJsonString);
+  if Result then
+    TFileIOHelper.SaveToFile(GetProjectsFileName, ProjectsJsonString);
+end;
+
 { TVCLPythiaJSTemplatesManager }
 
 constructor TVCLPythiaJSTemplatesManager.Create(AOwner: TComponent);
@@ -2282,6 +2419,13 @@ begin
     .Filter(Filter)
     .FilterIndex(Index)
     .Execute(FileName, True);
+end;
+
+function TVCLOpenDialog.ExecuteFolder(out FolderPath: string): Boolean;
+begin
+  Result := TFolderDialogHelper
+    .Use(nil)
+    .Execute(FolderPath);
 end;
 
 { TVCLPythiaRunProcessManager }
@@ -2419,6 +2563,11 @@ begin
   Result := FOnChatSessionAutoRename;
 end;
 
+function TVCLPythiaChatSessionManager.GetOnAfterSessionReloaded: TProc<string>;
+begin
+  Result := FOnAfterSessionReloaded;
+end;
+
 function TVCLPythiaChatSessionManager.GetPersistentChat: IPersistentChat;
 begin
   Result := FPersistentChat;
@@ -2436,6 +2585,12 @@ procedure TVCLPythiaChatSessionManager.SetOnChatSessionAutoRename(
   const Value: TProc<string, string>);
 begin
   FOnChatSessionAutoRename := Value;
+end;
+
+procedure TVCLPythiaChatSessionManager.SetOnAfterSessionReloaded(
+  const Value: TProc<string>);
+begin
+  FOnAfterSessionReloaded := Value;
 end;
 
 procedure TVCLPythiaChatSessionManager.SetPersistentChat(
@@ -2596,6 +2751,9 @@ begin
   {--- Load the capabilities descriptor from disk (create it with defaults
        if missing) and synchronize backend / frontend capability state. }
   CapabilitiesInitialization;
+
+  {--- Restore the persisted project list into the input project menu. }
+  ProjectsInitialization;
 
   {--- Reload or create general application settings (look & feel, language...)
        and push them into the settings panel UI. }
@@ -3407,6 +3565,11 @@ end;
 function TVCLPythiaPath.GetParamsMainValuesFileName: string;
 begin
   Result := GetRawName + '-request-params-main-values.json';
+end;
+
+function TVCLPythiaPath.GetProjectsFileName: string;
+begin
+  Result := GetSupportRawName + '-projects.json';
 end;
 
 function TVCLPythiaPath.GetRawName: string;

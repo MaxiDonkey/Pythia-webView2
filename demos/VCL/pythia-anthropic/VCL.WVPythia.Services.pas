@@ -70,6 +70,30 @@ type
 
 implementation
 
+{$REGION 'Dev note'}
+(*
+
+  VCL adapter hooks for the pythia-anthropic demo.
+
+  Pythia asks a TCustomChatManagedItemDialogService implementation to handle
+  UI actions such as selecting managed items, opening settings panes, copying
+  content and submitting the current input state. This unit provides the VCL
+  demo implementation and keeps those callbacks small.
+
+  The only production path here is ActivateInputState: it forwards the input
+  prompt state to the global Anthropic vendor service, which then decides
+  whether the turn goes through regular Messages streaming or Managed Agents.
+  Most other handlers are demo placeholders that either let Pythia's standard
+  selection UI continue or show a simple TODO dialog.
+
+  The implementation uses Main from the implementation section on purpose.
+  That creates a cross-interface dependency, but it keeps this sample compact:
+  the real vendor logic remains in Demo.Anthropic.Services while this unit
+  only bridges VCL UI events to that service.
+
+*)
+{$ENDREGION}
+
 uses
   {--- Here we have a cross-interface dependency, which is something to be aware of.
        I took the liberty of doing it here because this is a demo. }
@@ -219,10 +243,11 @@ end;
 class function TToolContainer.SelectAgentItem(
   out AItem: TChatManagedItemRef): Boolean;
 begin
-  Result := True;
-  ShowMessage('Todo custom selection: Agent Item');
-  var Code := Trunc(Random(20000) + 1);
-  AItem := TChatManagedItemRef.Create(Code.ToString, 'web search agent');
+  {--- Non-intrusive: do not intercept the selection. The standard agent-card
+       selector populates State.Integration.Agents, exactly as it does for
+       skill and MCP cards; TAnthropicServices routes the turn from there. }
+  AItem := Default(TChatManagedItemRef);
+  Result := False;
 end;
 
 class function TToolContainer.SelectCustomItem(

@@ -1089,13 +1089,38 @@
     return "Tools used";
   }
 
+  function getToolGroupEntryCount(group) {
+    if (!group || typeof group.querySelector !== "function") return 0;
+
+    const body = group.querySelector(":scope > .pythia-tool-group-body");
+    if (!body || typeof body.querySelectorAll !== "function") return 0;
+
+    return body.querySelectorAll(":scope > .pythia-tool-call").length;
+  }
+
+  function getToolGroupSummaryLabel(group) {
+    const label = getToolGroupLabel();
+    const count = getToolGroupEntryCount(group);
+
+    return count > 0 ? label + " (" + count + ")" : label;
+  }
+
+  function updateToolGroupSummary(group) {
+    if (!group || typeof group.querySelector !== "function") return;
+
+    const summary = group.querySelector(":scope > .pythia-tool-group-summary");
+    if (!summary) return;
+
+    summary.textContent = getToolGroupSummaryLabel(group);
+  }
+
   function createToolGroupElement() {
     const details = document.createElement("details");
     details.className = "pythia-tool-group";
 
     const summary = document.createElement("summary");
     summary.className = "pythia-tool-group-summary";
-    summary.textContent = getToolGroupLabel();
+    summary.textContent = getToolGroupSummaryLabel(details);
     details.appendChild(summary);
 
     const body = document.createElement("div");
@@ -1206,6 +1231,7 @@
     const group = getOrCreateToolGroup(host);
     const entry = createToolCallEntry(kind, payload);
     getToolGroupBody(group).appendChild(entry);
+    updateToolGroupSummary(group);
     return entry;
   }
 
@@ -1233,6 +1259,7 @@
     const group = ensureSectionToolGroup(section);
     const entry = createToolCallEntry(kind, payload);
     getToolGroupBody(group).appendChild(entry);
+    updateToolGroupSummary(group);
     markSectionToolBoundary(section);
     return entry;
   }
@@ -1254,15 +1281,17 @@
       return display(false, pairIdClean, getDisplayBlockText(data), "");
     }
 
-    const target = ensureDisplayBlockResponse(pairIdClean);
-
     if (isToolDisplayKind(kindClean)) {
-      const section = ensureActiveToolSection(target.response);
-      appendToolEntryToSection(section, kindClean, payload);
-    } else {
-      appendStandaloneBlock(target.host, kindClean, payload);
+      runAfterDisplayStreams(() => {
+        const target = ensureDisplayBlockResponse(pairIdClean);
+        const section = ensureActiveToolSection(target.response);
+        appendToolEntryToSection(section, kindClean, payload);
+      }, pairIdClean);
+      return true;
     }
 
+    const target = ensureDisplayBlockResponse(pairIdClean);
+    appendStandaloneBlock(target.host, kindClean, payload);
     return true;
   }
 
@@ -1283,52 +1312,57 @@
       return displayStream(true, pairIdClean, deltaText, "");
     }
 
-    const target = ensureDisplayBlockResponse(pairIdClean);
-
     if (isToolDisplayKind(kindClean)) {
+      runAfterDisplayStreams(() => {
+        const target = ensureDisplayBlockResponse(pairIdClean);
 
-      const section = ensureActiveToolSection(target.response);
-      const group = ensureSectionToolGroup(section);
+        const section = ensureActiveToolSection(target.response);
+        const group = ensureSectionToolGroup(section);
 
-      if (kindClean === "toolStatus") {
-        const entry = createToolCallEntry(kindClean, payload);
-        if (deltaText) {
-          entry.__pythiaDisplayText =
-            String(entry.__pythiaDisplayText || "") + deltaText;
-          renderToolCallEntry(entry);
+        if (kindClean === "toolStatus") {
+          const entry = createToolCallEntry(kindClean, payload);
+          if (deltaText) {
+            entry.__pythiaDisplayText =
+              String(entry.__pythiaDisplayText || "") + deltaText;
+            renderToolCallEntry(entry);
+          }
+          getToolGroupBody(group).appendChild(entry);
+          updateToolGroupSummary(group);
+          markSectionToolBoundary(section);
+          return;
         }
-        getToolGroupBody(group).appendChild(entry);
-        markSectionToolBoundary(section);
-        return true;
-      }
 
-      let entry = getLastToolCallEntry(group);
-      if (!entry) {
+        let entry = getLastToolCallEntry(group);
+        if (!entry) {
 
-        entry = createToolCallEntry("toolStatus", {});
-        getToolGroupBody(group).appendChild(entry);
-        markSectionToolBoundary(section);
-      }
+          entry = createToolCallEntry("toolStatus", {});
+          getToolGroupBody(group).appendChild(entry);
+          updateToolGroupSummary(group);
+          markSectionToolBoundary(section);
+        }
 
-      if (kindClean === "toolError") {
-        entry.classList.add("is-error");
-        entry.dataset.displayKind = "toolError";
-      }
+        if (kindClean === "toolError") {
+          entry.classList.add("is-error");
+          entry.dataset.displayKind = "toolError";
+        }
 
-      if (payload != null && String(payload).trim()) {
-        const nextPayload = normalizeDisplayBlockPayload(payload);
-        entry.__pythiaDisplayPayload = Object.assign(
-          {},
-          entry.__pythiaDisplayPayload || {},
-          nextPayload
-        );
-      }
+        if (payload != null && String(payload).trim()) {
+          const nextPayload = normalizeDisplayBlockPayload(payload);
+          entry.__pythiaDisplayPayload = Object.assign(
+            {},
+            entry.__pythiaDisplayPayload || {},
+            nextPayload
+          );
+        }
 
-      entry.__pythiaDisplayText =
-        String(entry.__pythiaDisplayText || "") + deltaText;
-      renderToolCallEntry(entry);
+        entry.__pythiaDisplayText =
+          String(entry.__pythiaDisplayText || "") + deltaText;
+        renderToolCallEntry(entry);
+      }, pairIdClean);
       return true;
     }
+
+    const target = ensureDisplayBlockResponse(pairIdClean);
 
     let block = getLastChildOpenBlockOfKind(target.host, kindClean);
 
@@ -1357,8 +1391,11 @@
     if (!pairIdClean) return false;
 
     const blocks = normalizeDisplayBlocks(blocksJson);
+    renderDisplay(true, pairIdClean, "", "", {
+      fromStreamQueue: true,
+      resetResponse: true
+    });
 
-    let mergedReasoningText = "";
     blocks.forEach((item) => {
       const payload = normalizeDisplayBlockPayload(item);
       const kind = normalizeDisplayBlockKind(
@@ -1370,31 +1407,14 @@
       );
 
       if (kind === "reasoning") {
-        const part = getDisplayBlockText(payload);
-        if (part) {
-          if (mergedReasoningText) mergedReasoningText += "\n\n";
-          mergedReasoningText += part;
+        const text = getDisplayBlockText(payload);
+        if (text) {
+          renderDisplay(true, pairIdClean, text, "", {
+            fromStreamQueue: true
+          });
         }
+        return;
       }
-    });
-
-    if (mergedReasoningText) {
-      renderDisplay(true, pairIdClean, mergedReasoningText, "", {
-        fromStreamQueue: true
-      });
-    }
-
-    blocks.forEach((item) => {
-      const payload = normalizeDisplayBlockPayload(item);
-      const kind = normalizeDisplayBlockKind(
-        payload.kind == null
-          ? payload.Kind == null
-            ? "status"
-            : payload.Kind
-          : payload.kind
-      );
-
-      if (kind === "reasoning") return;
 
       if (kind === "assistant") {
         const text = getDisplayBlockText(payload);
@@ -1406,16 +1426,19 @@
         return;
       }
 
+      const target = ensureDisplayBlockResponse(pairIdClean);
+
       if (isToolDisplayKind(kind)) {
-        const target = ensureDisplayBlockResponse(pairIdClean);
         const section = ensureActiveToolSection(target.response);
         appendToolEntryToSection(section, kind, payload);
         return;
       }
 
-      const target = ensureDisplayBlockResponse(pairIdClean);
       appendStandaloneBlock(target.host, kind, payload);
     });
+
+    const target = ensureDisplayBlockResponse(pairIdClean);
+    target.block.dataset.streaming = "false";
 
     return true;
   }
@@ -1442,6 +1465,7 @@
   if (!pairIdClean) return;
 
   const fromStreamQueue = !!(options && options.fromStreamQueue);
+  const resetResponse = !!(options && options.resetResponse);
 
   const reasoningClean = fromStreamQueue
     ? String(reasoning || "")
@@ -1502,7 +1526,7 @@
     });
 
     rootNode.querySelectorAll(".pythia-tool-group > .pythia-tool-group-summary").forEach((summary) => {
-      summary.textContent = getToolGroupLabel();
+      updateToolGroupSummary(summary.parentElement);
     });
 
     rootNode
@@ -2673,7 +2697,7 @@
   };
 
   const wasStreaming = block.dataset.streaming === "true";
-  const isStartingStream = isStreamCall && (!wasStreaming || isNewBlock);
+  const isStartingStream = isStreamCall && (resetResponse || !wasStreaming || isNewBlock);
 
   if (isStartingStream) {
     block.__mdSource = "";
@@ -2726,6 +2750,16 @@
     return response;
   };
 
+  const hasPythiaStructuredResponseContent = (targetResponse) => {
+    if (!targetResponse || typeof targetResponse.querySelector !== "function") {
+      return false;
+    }
+
+    return !!targetResponse.querySelector(
+      ":scope > .pythia-response-section, :scope > .pythia-display-block-list"
+    );
+  };
+
   const resolveStreamSection =
     window.DisplayTemplate && typeof window.DisplayTemplate.__resolveStreamSection === "function"
       ? window.DisplayTemplate.__resolveStreamSection
@@ -2757,7 +2791,10 @@
   let response = ensureResponse(block);
 
   if (isStreamCall) {
-    if (isStartingStream) {
+    if (
+      resetResponse ||
+      (isStartingStream && !hasPythiaStructuredResponseContent(response))
+    ) {
       response.replaceChildren();
     }
 

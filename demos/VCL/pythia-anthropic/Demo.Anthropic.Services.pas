@@ -4,67 +4,21 @@ interface
 
 uses
   System.SysUtils, System.IOUtils, System.Net.URLClient, System.JSON,
-  Winapi.Windows,
   WVPythia.Chat.Interfaces, WVPythia.Chat.ManagedFlow, WVPythia.TextFile.Helper,
   WVPythia.Strs, WVPythia.Vendors.Services,
-  Anthropic, Anthropic.Types, Anthropic.Async.Promise, Anthropic.Helpers,
-  Anthropic.API.JsonSafeReader, Anthropic.Headers.Beta,
+  Anthropic, Anthropic.Types, Anthropic.Helpers, Anthropic.API.JsonSafeReader,
+  Anthropic.Headers.Beta,
   Demo.Anthropic.Helpers, Demo.Anthropic.Context,
   Demo.Anthropic.AsyncUtils, Demo.Anthropic.JsonResponse.Helper,
-  Demo.Anthropic.DisplayBlocks, Demo.Anthropic.Upload;
+  Demo.Anthropic.DisplayBlocks, Demo.Anthropic.Upload, Demo.Anthropic.Finalize,
+  Demo.Anthropic.Agent.Provisioning, Demo.Anthropic.Agent.Registry,
+  Demo.Anthropic.Session.Flow;
 
 const
   ABORTED_INDICATOR = 'aborted';
+  ANTHROPIC_RESPONSE_TIMEOUT = 30 * 60 * 1000;
 
 type
-  TFinalizeData = record
-    Model: string;
-    Response: string;
-    Reasoning: string;
-    JsonRequest: string;
-    JsonResponse: string;
-    FileResults: TArray<string>;
-    ImageResults: TArray<string>;
-    VideoResults: TArray<string>;
-    AudioResult: TArray<string>;
-    Error: Boolean;
-    ErrorMessage: string;
-    Blocks: IDisplayBlockAggregator;
-
-    class function FromState(
-      AState: TStateBuffer;
-      const ABlocks: IDisplayBlockAggregator): TFinalizeData; overload; static;
-
-    class function FromSuccess(
-      const AValue: TEventData;
-      const AState: TStateBuffer;
-      const ABlocks: IDisplayBlockAggregator): TFinalizeData; overload; static;
-
-    class function FromException(
-      const E: Exception;
-      const AState: TStateBuffer;
-      const ABlocks: IDisplayBlockAggregator): TFinalizeData; overload; static;
-
-    procedure Emit(const AOnFinalize: TManagedItemFinalizeProc);
-  end;
-
-  /// <summary>
-  /// Ensures the managed finalize callback is emitted at most once.
-  /// </summary>
-  IEmitGuard = interface
-    ['{F2C0A4D7-3E15-4C9A-9D6E-2A7E4D5B8F11}']
-    procedure TryEmit(const Data: TFinalizeData);
-  end;
-
-  TEmitGuard = class(TInterfacedObject, IEmitGuard)
-  private
-    FEmitted: Boolean;
-    FOnFinalize: TManagedItemFinalizeProc;
-  public
-    constructor Create(const AOnFinalize: TManagedItemFinalizeProc);
-    procedure TryEmit(const Data: TFinalizeData);
-  end;
-
   TAnthropicServices = class(TInterfacedObject, IVendorServices)
   const
     API_KEY_NAME = 'anthropic';
@@ -73,8 +27,13 @@ type
     FBrowser: IPythiaBrowser;
     FContext: IContext;
     FClientUtils: IAnthropicClientUtils;
+    FAgentRegistry: IAgentCloudRegistry;
+    FProvisioner: IAgentProvisioner;
+    FAgentFlow: IAgentSessionFlow;
 
     procedure ChatSessionRename(ID, Value: string);
+
+    procedure AfterSessionReloaded(ChatId: string);
 
     function ToolsBuilder(
       const AState: TStateBuffer;
@@ -159,7 +118,7 @@ type
       const E: Exception;
       const Value: TEventData;
       var State: TStateBuffer;
-      const Blocks: IDisplayBlockAggregator;
+      const Blocks: IAnthropicDisplayBlockAggregator;
       const EmitGuard: IEmitGuard);
 
     /// <summary>
@@ -169,7 +128,7 @@ type
       const E: Exception;
       const Value: TEventData;
       var State: TStateBuffer;
-      const Blocks: IDisplayBlockAggregator;
+      const Blocks: IAnthropicDisplayBlockAggregator;
       const EmitGuard: IEmitGuard);
 
     /// <summary>
@@ -178,7 +137,7 @@ type
     procedure HandleChatError(
       const E: Exception;
       var State: TStateBuffer;
-      const Blocks: IDisplayBlockAggregator;
+      const Blocks: IAnthropicDisplayBlockAggregator;
       const EmitGuard: IEmitGuard);
 
   public
@@ -202,11 +161,47 @@ var
 
 implementation
 
+{$REGION 'Dev note'}
+(*
+
+  Anthropic vendor service bridge for the pythia-anthropic VCL demo.
+
+  This unit is the IVendorServices implementation registered by the demo. It
+  owns the Anthropic client, receives Pythia turns, builds Anthropic request
+  payloads, starts streams, maps stream callbacks back into the browser UI, and
+  finalizes each turn through the managed-flow callback.
+
+  There are two execution paths:
+    - regular chat turns go through the Messages streaming API in
+      AsyncAwaitStreamChat;
+    - turns with a selected agent card are delegated to
+      Demo.Anthropic.Session.Flow, which handles Managed Agents sessions.
+
+  The service coordinates helpers rather than concentrating all policy here:
+  Demo.Anthropic.Helpers builds request settings and content blocks,
+  Demo.Anthropic.Context rebuilds historical messages, DisplayBlocks preserves
+  streamed UI blocks, AsyncUtils handles background downloads/deletes/renames,
+  and the Managed Agents units own provisioning, registry and cloud cleanup.
+
+  Stream finalization is deliberately guarded. A turn can complete through the
+  success path, a file-retrieval fallback, cancellation, or an exception; all
+  paths converge through TEmitGuard so Pythia receives exactly one final
+  result. Input files are deleted best-effort once consumed, while output file
+  ids are validated, resolved to safe local names and downloaded asynchronously.
+
+  Constructor wiring is also part of this service boundary: it refreshes the
+  API key, installs browser callbacks, creates the local Managed Agents
+  registry, starts provider-specific cleanup, and wires upload support into the
+  Pythia browser.
+
+*)
+{$ENDREGION}
+
 uses
   System.Classes,
   Anthropic.Chat.StreamCallbacks,
-  WVPythia.Chat.Consts,
-  WVPythia.ChatSession.Controller;
+  WVPythia.Chat.Consts, WVPythia.Strings.Escape, WVPythia.ChatSession.Controller,
+  Demo.Anthropic.Agent.Cards, Demo.Anthropic.Agent.Cleanup;
 
 type
   TAnthropicFileIds = record
@@ -302,6 +297,15 @@ var
 begin
   {--- AState belongs to the Pythia managed flow; async closures capture only State }
   var State := TStateBuffer.FromState(AState);
+
+  {--- Route managed-agent turns through the Managed Agents flow. The Messages
+       API streaming path below handles every other turn. }
+  if Length(State.Integration.Agents) > 0 then
+    begin
+      FAgentFlow.Run(State, AOnFinalize);
+      Exit;
+    end;
+
   State.Model := State.Models.Items[TEXT_GENERATION_INDEX].Model;
 
   var Payload := BuildAndCheckPayload(State, JsonPayloadAsString);
@@ -310,7 +314,8 @@ begin
   {--- Display-block aggregator captured by all stream closures: it builds the
        ordered TChatDisplayBlock list that Pythia persists on the turn for
        later replay. }
-  var Blocks: IDisplayBlockAggregator := TDisplayBlockAggregator.Create;
+  var Blocks: IAnthropicDisplayBlockAggregator :=
+    TAnthropicDisplayBlockAggregator.Create;
 
   {--- Event callbacks are built inline so every streamed delta updates the
        State captured by the finalizers, not a copied record owned by a helper. }
@@ -568,7 +573,7 @@ procedure TAnthropicServices.HandleResolveFallback(
   const E: Exception;
   const Value: TEventData;
   var State: TStateBuffer;
-  const Blocks: IDisplayBlockAggregator;
+  const Blocks: IAnthropicDisplayBlockAggregator;
   const EmitGuard: IEmitGuard);
 begin
   {--- Filename resolution failed after file retrieval succeeded.
@@ -585,7 +590,7 @@ procedure TAnthropicServices.HandleRetrieveFailure(
   const E: Exception;
   const Value: TEventData;
   var State: TStateBuffer;
-  const Blocks: IDisplayBlockAggregator;
+  const Blocks: IAnthropicDisplayBlockAggregator;
   const EmitGuard: IEmitGuard);
 begin
   FBrowser.DisplayError(Format('Files.Retrieve failed: %s', [E.Message]));
@@ -607,7 +612,7 @@ end;
 procedure TAnthropicServices.HandleChatError(
   const E: Exception;
   var State: TStateBuffer;
-  const Blocks: IDisplayBlockAggregator;
+  const Blocks: IAnthropicDisplayBlockAggregator;
   const EmitGuard: IEmitGuard);
 begin
   {--- User cancellation is not treated as a failed turn: the partial streamed
@@ -631,23 +636,6 @@ begin
     Blocks.AppendAssistantText(MessageContent);
   FBrowser.Display(MessageContent, False);
   EmitGuard.TryEmit(TFinalizeData.FromState(State, Blocks));
-end;
-
-{ TEmitGuard }
-
-constructor TEmitGuard.Create(const AOnFinalize: TManagedItemFinalizeProc);
-begin
-  inherited Create;
-  FOnFinalize := AOnFinalize;
-  FEmitted := False;
-end;
-
-procedure TEmitGuard.TryEmit(const Data: TFinalizeData);
-begin
-  if FEmitted then
-    Exit;
-  FEmitted := True;
-  Data.Emit(FOnFinalize);
 end;
 
 function TAnthropicServices.BuildPayload(
@@ -794,6 +782,49 @@ begin
   FClientUtils.ASyncSessionRename(ID, Value);
 end;
 
+procedure TAnthropicServices.AfterSessionReloaded(ChatId: string);
+var
+  CardName: string;
+begin
+  (*--- Fires after Pythia re-rendered a chat session (drawer click or
+       startup). Restores the managed-agent chip in the input bubble when
+       the reloaded chat carries any agent history.
+
+       NEVER clears the chip on empty history: the host policy keeps the
+       user's last selection persistent across sessions (see
+       InputBubbleTemplate.js); the JS-side single-agent invariant
+       collapses the bulk payload safely on its end.
+
+       Resolution chain:
+         - LastAgentCardId walks the chat's turns newest-first and returns
+           the first managed_agent.card_id stored by RecordTrace;
+         - TryGetCardLabel reads the human-readable name from the
+           agent-cards JSON file;
+         - setIntegrationAgents pushes {id,name} to the input bubble.
+       Any miss along the chain leaves the persisted chip untouched.
+  *)
+  if not Assigned(FContext) then
+    Exit;
+
+  var CardId := FContext.LastAgentCardId;
+  if CardId.Trim.IsEmpty then
+    Exit;
+
+  var CardsFile := FBrowser.GetAgentCardsFileName;
+  if not FileExists(CardsFile) then
+    Exit;
+
+  var CardsJson := TFileIOHelper.LoadFromFile(CardsFile);
+  if not TAgentCardReader.TryGetCardLabel(CardsJson, CardId, CardName) then
+    Exit;
+
+  FBrowser.ExecuteScript(
+    Format(CARD_CHIP_AGENT_SHOW, [
+      TEscapeHelper.EscapeJSString(CardId, False),
+      TEscapeHelper.EscapeJSString(CardName, False)
+    ]));
+end;
+
 constructor TAnthropicServices.Create(const ABrowser: IPythiaBrowser;
   const AContext: IContext);
 var
@@ -813,14 +844,30 @@ begin
 
   FClient := TAnthropicFactory.CreateInstance(Anthropic_key);
 
-  {---- Set response delay for 2 min and 30 seconds }
-  FClient.HttpClient.ResponseTimeout := 150000;
+  {---- Set response delay for 30 minutes. This shared SDK setting
+        applies to regular requests and managed-agent session streams. }
+  FClient.HttpClient.ResponseTimeout := ANTHROPIC_RESPONSE_TIMEOUT;
 
   {--- Set up the Anthropic tools for asynchronous file renaming and downloading. }
   FClientUtils := TAnthropicClientUtils.Create(FClient, FBrowser);
 
+  var CardsFile := FBrowser.GetAgentCardsFileName;
+  var RegistryFile := TPath.Combine(
+    TPath.GetDirectoryName(CardsFile),
+    'VCL_Anthropic-agent-cloud-registry.local.json');
+  FAgentRegistry := TAgentCloudRegistry.Create(RegistryFile);
+  TAnthropicAgentCloudCleanup.StartBackground(
+    FClient,
+    FAgentRegistry,
+    TAgentCloudCleanupPolicy.DemoDefaults);
+
   {--- Set up the automatic session renaming feature. }
   FBrowser.OnChatSessionAutoRename := ChatSessionRename;
+
+  {--- Restore the managed-agent chip on chat reload when the reopened
+       session has any agent history. No-op otherwise (preserves the
+       persisted UI selection). }
+  FBrowser.OnAfterSessionReloaded := AfterSessionReloaded;
 
   {--- Demo wiring: plug the Anthropic implementation of IFileUploadService
        into the browser. The service uses the browser as the JS callback
@@ -833,6 +880,11 @@ begin
        with the server-side ids when they are created.
   }
   SkillCustomRegister;
+
+  {--- Managed Agents flow: provisions agents / environments from agent cards
+       and drives session-based turns. Used when an agent card is selected. }
+  FProvisioner := TAgentProvisioner.Create(FClient, FAgentRegistry);
+  FAgentFlow := TAgentSessionFlow.Create(FBrowser, FContext, FClient, FProvisioner);
 end;
 
 function TAnthropicServices.LoadFileResult(
@@ -975,7 +1027,6 @@ procedure TAnthropicServices.SkillBuilder(
   const AState: TStateBuffer;
   const Params: TChatParams);
 var
-  Item: TSkillItem;
   ContainerId: string;
 begin
   {--- Bind Anthropic skills to the capabilities selected for this turn and
@@ -1012,7 +1063,7 @@ begin
       var Skills := TParamsGetter.GetSkills(AState);
       var SkillList := Generation.SkillParts;
 
-      for Item in Skills do
+      for var Item in Skills do
         SkillList := SkillList.Add(
           Generation.Skill.CreateSkill(Item.SkillType)
             .SkillId(Item.ID)
@@ -1142,123 +1193,6 @@ begin
 
   FClient.API.Token := Anthropic_key;
   FBrowser.DisplaySuccess('Anthropic client is up to date.')
-end;
-
-{ TFinalizeData }
-
-class function TFinalizeData.FromState(
-  AState: TStateBuffer;
-  const ABlocks: IDisplayBlockAggregator): TFinalizeData;
-begin
-  {--- Rebuilds the final payload from the local stream buffer.
-       This path is used when the request stops before a canonical success
-       object is available, such as cancellation.
-  }
-  Result.Model := AState.Model;
-  Result.Response := AState.TextBuffer;
-  Result.Reasoning := AState.ThinkingBuffer;
-  Result.JsonRequest := AState.JsonRequest;
-  Result.JsonResponse := AState.JsonResponse;
-  Result.FileResults := AState.FileResults;
-  Result.ImageResults := AState.ImageResults;
-  Result.VideoResults := AState.VideoResults;
-  Result.AudioResult := AState.AudioResults;
-  Result.Error := AState.Error;
-  Result.ErrorMessage := AState.ErrorMessage;
-  Result.Blocks := ABlocks;
-end;
-
-class function TFinalizeData.FromSuccess(
-  const AValue: TEventData;
-  const AState: TStateBuffer;
-  const ABlocks: IDisplayBlockAggregator): TFinalizeData;
-begin
-  {--- On success, text and reasoning come from the SDK terminal event, while
-       request/response JSON traces remain sourced from the local state buffer
-       accumulated during the stream.
-  }
-  Result.Model := AState.Model;
-  Result.Response := AValue.AssistantText;
-  if Result.Response.IsEmpty then
-    Result.Response := AState.TextBuffer;
-  Result.Reasoning := AValue.Thought;
-  Result.JsonRequest := AState.JsonRequest;
-  Result.JsonResponse := AState.JsonResponse;
-  Result.FileResults := AState.FileResults;
-  Result.ImageResults := AState.ImageResults;
-  Result.VideoResults := AState.VideoResults;
-  Result.AudioResult := AState.AudioResults;
-  Result.Error := AState.Error;
-  Result.ErrorMessage := AState.ErrorMessage;
-  Result.Blocks := ABlocks;
-end;
-
-class function TFinalizeData.FromException(
-  const E: Exception;
-  const AState: TStateBuffer;
-  const ABlocks: IDisplayBlockAggregator): TFinalizeData;
-begin
-  {--- Persist the failure together with any text already streamed.
-       The live UI reports the exception through the error channel, but the chat
-       history is rebuilt later from Response only; without appending the message
-       here, reopening the session would hide why this turn stopped.
-  }
-  Result.Model := AState.Model;
-  if AState.TextBuffer.Trim.IsEmpty then
-    Result.Response := E.Message
-  else
-    Result.Response := AState.TextBuffer + '<br><br>' + E.Message;
-  Result.Reasoning := '';
-  Result.JsonRequest := AState.JsonRequest;
-  Result.JsonResponse := AState.JsonResponse;
-  Result.FileResults := AState.FileResults;
-  Result.ImageResults := AState.ImageResults;
-  Result.VideoResults := AState.VideoResults;
-  Result.AudioResult := AState.AudioResults;
-  Result.Error := AState.Error;
-  Result.ErrorMessage := AState.ErrorMessage;
-  Result.Blocks := ABlocks;
-end;
-
-procedure TFinalizeData.Emit(const AOnFinalize: TManagedItemFinalizeProc);
-var
-  BlockClones: TArray<TChatDisplayBlock>;
-begin
-  {--- Converts the plain record into the managed result object expected by the
-       surrounding flow infrastructure, then dispatches it through the caller's
-       finalize callback if one was provided.
-  }
-  if not Assigned(AOnFinalize) then
-    Exit;
-
-  {--- Hand a cloned snapshot of the streamed blocks to the result builder;
-       TManagedItemLLMResult.SetDisplayBlocks clones again into its own
-       storage, so the local copies must be freed before returning. }
-  BlockClones := nil;
-  if Assigned(Blocks) then
-    BlockClones := Blocks.CloneAll;
-
-  var ResponseFlow := TManagedItemLLMResult.New;
-  try
-    ResponseFlow
-      .UsedModel(Model)
-      .Response(Response)
-      .Reasoning(Reasoning)
-      .PromptJson(JsonRequest)
-      .ResponseJson(JsonResponse)
-      .FileResults(FileResults)
-      .ImageResults(ImageResults)
-      .VideoResults(VideoResults)
-      .AudioResults(AudioResult)
-      .DisplayBlockResults(BlockClones)
-      .Error(Error)
-      .ErrorMessage(ErrorMessage);
-
-    AOnFinalize(ResponseFlow);
-  finally
-    FreeChatDisplayBlocks(BlockClones);
-    ResponseFlow.Free;
-  end;
 end;
 
 end.

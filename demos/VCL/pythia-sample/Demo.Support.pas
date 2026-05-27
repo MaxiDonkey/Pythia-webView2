@@ -45,6 +45,7 @@ type
     procedure MicrophoneButtonVisible(Sender: TObject);
     procedure ParametersButtonVisible(Sender: TObject);
     procedure ModelsButtonVisible(Sender: TObject);
+    procedure ProjectButtonVisible(Sender: TObject);
     procedure EndpointVisible(Sender: TObject);
     procedure WebReseachVisible(Sender: TObject);
     procedure ReasoningVisible(Sender: TObject);
@@ -268,6 +269,8 @@ begin
   Form1.ControlListCheckBox5.OnClick := MicrophoneButtonVisible;
   Form1.ControlListCheckBox6.OnClick := ParametersButtonVisible;
   Form1.ControlListCheckBox7.OnClick := ModelsButtonVisible;
+  Form1.ControlListCheckBox36.OnClick := ProjectButtonVisible;
+
   Form1.ControlListCheckBox8.OnClick := EndpointVisible;
   Form1.ControlListCheckBox9.OnClick := WebReseachVisible;
   Form1.ControlListCheckBox10.OnClick := ReasoningVisible;
@@ -701,6 +704,17 @@ begin
 
   FCurrentSubMenu := FCurrentSubMenu - 1;
   ShowSubMenu(FCurrentSubMenu);
+end;
+
+procedure TCheckComponent.ProjectButtonVisible(Sender: TObject);
+begin
+  CapabilitiesApply(Sender,
+    procedure (Value: Boolean)
+    begin
+      FBrowser.Capabilities
+        .Project(Value)
+        .Update;
+    end);
 end;
 
 procedure TCheckComponent.PromptsVeryLong(Sender: TObject);

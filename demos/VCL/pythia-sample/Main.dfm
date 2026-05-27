@@ -43,6 +43,7 @@ object Form1: TForm1
       Align = alClient
       BorderStyle = bsNone
       TabOrder = 0
+      ExplicitLeft = 6
       object ControlListCheckBox1: TControlListCheckBox
         Left = 16
         Top = 8
@@ -111,7 +112,7 @@ object Form1: TForm1
       end
       object ControlListCheckBox4: TControlListCheckBox
         Left = 16
-        Top = 80
+        Top = 71
         Width = 18
         Height = 18
         StyleName = 'Windows'
@@ -120,7 +121,7 @@ object Form1: TForm1
       end
       object Label4: TLabel
         Left = 40
-        Top = 82
+        Top = 73
         Width = 151
         Height = 15
         Caption = '"Function" (+) button visible'
@@ -134,14 +135,14 @@ object Form1: TForm1
       end
       object ControlListCheckBox5: TControlListCheckBox
         Left = 16
-        Top = 100
+        Top = 91
         Width = 18
         Height = 18
         StyleName = 'Windows'
       end
       object Label5: TLabel
         Left = 40
-        Top = 102
+        Top = 93
         Width = 140
         Height = 15
         Caption = 'Microphone button visible'
@@ -155,7 +156,7 @@ object Form1: TForm1
       end
       object ControlListCheckBox6: TControlListCheckBox
         Left = 16
-        Top = 121
+        Top = 112
         Width = 18
         Height = 18
         StyleName = 'Windows'
@@ -164,7 +165,7 @@ object Form1: TForm1
       end
       object Label6: TLabel
         Left = 40
-        Top = 122
+        Top = 113
         Width = 127
         Height = 15
         Caption = '"Settings" button visible'
@@ -178,7 +179,7 @@ object Form1: TForm1
       end
       object ControlListCheckBox7: TControlListCheckBox
         Left = 16
-        Top = 142
+        Top = 133
         Width = 18
         Height = 18
         StyleName = 'Windows'
@@ -187,7 +188,7 @@ object Form1: TForm1
       end
       object Label7: TLabel
         Left = 40
-        Top = 143
+        Top = 134
         Width = 119
         Height = 15
         Caption = '"Model" button visible'
@@ -332,16 +333,39 @@ object Form1: TForm1
         ParentFont = False
         StyleElements = [seClient, seBorder]
       end
+      object ControlListCheckBox36: TControlListCheckBox
+        Left = 16
+        Top = 153
+        Width = 18
+        Height = 18
+        StyleName = 'Windows'
+        Checked = True
+        CheckState = cbChecked
+      end
+      object Label65: TLabel
+        Left = 40
+        Top = 155
+        Width = 122
+        Height = 15
+        Caption = '"Project" button visible'
+        Font.Charset = DEFAULT_CHARSET
+        Font.Color = 8355711
+        Font.Height = -12
+        Font.Name = 'Segoe UI'
+        Font.Style = []
+        ParentFont = False
+        StyleElements = [seClient, seBorder]
+      end
       object ScrollBox2: TScrollBox
         Left = 3
         Top = 174
         Width = 198
-        Height = 211
+        Height = 214
         BorderStyle = bsNone
         TabOrder = 0
         object Label8: TLabel
           Left = 36
-          Top = 3
+          Top = 10
           Width = 84
           Height = 15
           Caption = 'Endpoint visible'
@@ -355,7 +379,7 @@ object Form1: TForm1
         end
         object ControlListCheckBox8: TControlListCheckBox
           Left = 12
-          Top = 1
+          Top = 8
           Width = 18
           Height = 18
           StyleName = 'Windows'
@@ -364,7 +388,7 @@ object Form1: TForm1
         end
         object ControlListCheckBox9: TControlListCheckBox
           Left = 12
-          Top = 21
+          Top = 28
           Width = 18
           Height = 18
           StyleName = 'Windows'
@@ -373,7 +397,7 @@ object Form1: TForm1
         end
         object Label9: TLabel
           Left = 36
-          Top = 23
+          Top = 30
           Width = 107
           Height = 15
           Caption = 'Web research visible'
@@ -387,7 +411,7 @@ object Form1: TForm1
         end
         object ControlListCheckBox10: TControlListCheckBox
           Left = 12
-          Top = 42
+          Top = 49
           Width = 18
           Height = 18
           StyleName = 'Windows'
@@ -396,7 +420,7 @@ object Form1: TForm1
         end
         object Label10: TLabel
           Left = 36
-          Top = 43
+          Top = 50
           Width = 91
           Height = 15
           Caption = 'Reasoning visible'
@@ -410,7 +434,7 @@ object Form1: TForm1
         end
         object ControlListCheckBox11: TControlListCheckBox
           Left = 12
-          Top = 64
+          Top = 71
           Width = 18
           Height = 18
           StyleName = 'Windows'
@@ -419,7 +443,7 @@ object Form1: TForm1
         end
         object Label11: TLabel
           Left = 36
-          Top = 66
+          Top = 73
           Width = 95
           Height = 15
           Caption = 'Attach files visible'
@@ -433,7 +457,7 @@ object Form1: TForm1
         end
         object ControlListCheckBox12: TControlListCheckBox
           Left = 12
-          Top = 84
+          Top = 91
           Width = 18
           Height = 18
           StyleName = 'Windows'
@@ -442,7 +466,7 @@ object Form1: TForm1
         end
         object Label12: TLabel
           Left = 36
-          Top = 86
+          Top = 93
           Width = 132
           Height = 15
           Caption = 'Knowledge search visible'
@@ -456,7 +480,7 @@ object Form1: TForm1
         end
         object ControlListCheckBox13: TControlListCheckBox
           Left = 12
-          Top = 105
+          Top = 112
           Width = 18
           Height = 18
           StyleName = 'Windows'
@@ -465,7 +489,7 @@ object Form1: TForm1
         end
         object Label13: TLabel
           Left = 36
-          Top = 106
+          Top = 113
           Width = 68
           Height = 15
           Caption = 'Vision visible'
@@ -479,7 +503,7 @@ object Form1: TForm1
         end
         object ControlListCheckBox14: TControlListCheckBox
           Left = 12
-          Top = 126
+          Top = 133
           Width = 18
           Height = 18
           StyleName = 'Windows'
@@ -488,7 +512,7 @@ object Form1: TForm1
         end
         object Label14: TLabel
           Left = 36
-          Top = 127
+          Top = 134
           Width = 106
           Height = 15
           Caption = 'Deep reseach visible'
@@ -502,7 +526,7 @@ object Form1: TForm1
         end
         object ControlListCheckBox15: TControlListCheckBox
           Left = 12
-          Top = 146
+          Top = 153
           Width = 18
           Height = 18
           StyleName = 'Windows'
@@ -511,7 +535,7 @@ object Form1: TForm1
         end
         object Label15: TLabel
           Left = 36
-          Top = 147
+          Top = 154
           Width = 94
           Height = 15
           Caption = 'Integration visible'
@@ -525,7 +549,7 @@ object Form1: TForm1
         end
         object ControlListCheckBox16: TControlListCheckBox
           Left = 12
-          Top = 167
+          Top = 174
           Width = 18
           Height = 18
           StyleName = 'Windows'
@@ -534,7 +558,7 @@ object Form1: TForm1
         end
         object Label16: TLabel
           Left = 36
-          Top = 168
+          Top = 175
           Width = 69
           Height = 15
           Caption = 'Media visible'
@@ -548,7 +572,7 @@ object Form1: TForm1
         end
         object ControlListCheckBox17: TControlListCheckBox
           Left = 12
-          Top = 188
+          Top = 195
           Width = 18
           Height = 18
           StyleName = 'Windows'
@@ -557,7 +581,7 @@ object Form1: TForm1
         end
         object Label17: TLabel
           Left = 36
-          Top = 189
+          Top = 196
           Width = 78
           Height = 15
           Caption = 'Custom visible'

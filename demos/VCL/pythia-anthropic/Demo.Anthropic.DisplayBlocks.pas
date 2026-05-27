@@ -6,49 +6,27 @@ uses
   System.SysUtils, System.JSON,
   Anthropic, Anthropic.Types, Anthropic.Chat.StreamEvents, Anthropic.Chat.StreamCallbacks,
   Anthropic.API.JsonSafeReader,
-  WVPythia.ChatSession.Controller;
+  WVPythia.Chat.DisplayBlocks;
 
 type
   /// <summary>
-  /// Live accumulator that turns Anthropic typed stream events into the
-  /// ordered TChatDisplayBlock list expected by Pythia for replay and
-  /// persistence.
+  /// Anthropic adapter over the vendor-neutral Pythia display block
+  /// aggregator. Only the methods that consume Anthropic stream snapshots
+  /// stay here.
   /// </summary>
-  IDisplayBlockAggregator = interface
-    ['{8B6F1F3C-4E5D-4F3E-9C2A-1F0E7D5A6B22}']
-    procedure AppendAssistantDelta(const Delta: string);
-    procedure AppendReasoningDelta(const Delta: string);
+  IAnthropicDisplayBlockAggregator = interface(IPythiaDisplayBlockAggregator)
+    ['{4FD13E85-8D8E-4E0C-9A17-D6F9197FB35D}']
     procedure RegisterToolUseStop(const Snapshot: TToolCallSnapshot;
       const DisplayTitle: string);
-    procedure AppendToolResultDelta(const Delta: string);
     procedure RegisterToolResultStop(const Snapshot: TToolResultSnapshot);
-    procedure AppendAssistantText(const Text: string);
-    procedure CloseCurrent;
-    function CloneAll: TArray<TChatDisplayBlock>;
-    function IsEmpty: Boolean;
   end;
 
-  TDisplayBlockAggregator = class(TInterfacedObject, IDisplayBlockAggregator)
-  private
-    FBlocks: TArray<TChatDisplayBlock>;
-    FCurrent: TChatDisplayBlock;
-    FCurrentToolEntry: TChatDisplayBlock;
-
-    function StartBlock(const Kind: string): TChatDisplayBlock;
-    procedure EnsureKind(const Kind: string);
+  TAnthropicDisplayBlockAggregator = class(
+    TPythiaDisplayBlockAggregator, IAnthropicDisplayBlockAggregator)
   public
-    destructor Destroy; override;
-
-    procedure AppendAssistantDelta(const Delta: string);
-    procedure AppendReasoningDelta(const Delta: string);
     procedure RegisterToolUseStop(const Snapshot: TToolCallSnapshot;
       const DisplayTitle: string);
-    procedure AppendToolResultDelta(const Delta: string);
     procedure RegisterToolResultStop(const Snapshot: TToolResultSnapshot);
-    procedure AppendAssistantText(const Text: string);
-    procedure CloseCurrent;
-    function CloneAll: TArray<TChatDisplayBlock>;
-    function IsEmpty: Boolean;
   end;
 
   TToolDisplayTitle = record
@@ -123,8 +101,75 @@ type
 
 implementation
 
-uses
-  WVPythia.Chat.Consts;
+{$REGION 'Dev note'}
+(*
+
+  Anthropic-flavored display rendering helpers for the Messages API streaming
+  path (Demo.Anthropic.Services). Three concerns live here, kept together
+  because they all turn raw Anthropic stream snapshots into UI-ready text:
+
+    1. TAnthropicDisplayBlockAggregator
+       A thin subclass of TPythiaDisplayBlockAggregator that adds two
+       Anthropic-shaped hooks: RegisterToolUseStop and RegisterToolResultStop.
+       They translate the SDK snapshots (TToolCallSnapshot, TToolResultSnapshot)
+       into the vendor-neutral AppendToolUse / MarkToolError / CloseCurrent
+       calls the rest of Pythia already understands. The Messages flow holds
+       this aggregator as IAnthropicDisplayBlockAggregator, captures it from
+       every stream closure, then hands its CloneDisplayBlocks snapshot to
+       TFinalizeData on completion for persistent replay.
+
+       This is the Messages-API counterpart of TAnthropicAgentTurnDisplay
+       (Demo.Anthropic.Agent.TurnDisplay), which plays the equivalent role
+       for the Managed Agents session flow.
+
+    2. TToolDisplayTitle
+       Resolves a human-readable label from an Anthropic block_type + tool
+       name + (optional) input JSON. The internal Anthropic identifiers
+       (bash_code_execution, text_editor_code_execution, code_execution,
+       web_search, web_fetch, computer, mcp_tool, ...) are first mapped
+       through a small TOOL_DISPLAY_NAMES table to user-facing names
+       ("Shell command", "File editor", "Python execution", ...). Both
+       exact match AND "<name>_<suffix>" prefix match are honored so
+       versioned or paired tool kinds (code_execution_20260120,
+       code_execution_tool_result, ...) resolve to the same label.
+
+       When the input JSON is available (FromInput), the title is enriched
+       with the salient argument: command/path for the shell and editor,
+       query for web_search, url for web_fetch, action for computer, tool
+       name for mcp_tool_use. The rendered title reads
+       "Shell command - ls /tmp" rather than the raw "bash_code_execution".
+
+    3. TToolUseDisplayDetails / TToolResultDisplayDetails
+       Build structured detail text blocks for the tool entries.
+         - TryFromSnapshot covers the input side for computer and MCP tools
+           (the variants where the bare title is not informative enough).
+         - TryFromEvent covers the result side for web_search, web_fetch,
+           tool_search and mcp_tool_result, with a shared
+           BuildToolErrorSummary fallback that parses error_code /
+           error_message out of Block.RawContent.
+       Both formatters return False when nothing useful can be rendered,
+       so the caller can skip the extra UI line without checking for empty
+       strings.
+
+  Timing
+  ------
+  Anthropic emits tool input as content_block_delta chunks and only
+  finalizes the assembled JSON at content_block_stop. Title resolution
+  (FromInput) therefore runs from OnToolUseStop in the service layer, not
+  at block_start; rendering earlier would label every tool call with the
+  raw block-type identifier.
+
+  Locality
+  --------
+  Display labels live in this unit on purpose. Keeping them out of
+  Demo.Anthropic.Services avoids sprinkling user-facing strings through
+  business logic and gives a single place to update when Anthropic ships a
+  new tool kind or renames an existing one - extend TOOL_DISPLAY_NAMES,
+  add the matching case branch in FromInput or TryFromEvent, and the live
+  UI plus the persisted history both pick up the new label.
+
+*)
+{$ENDREGION}
 
 type
   TToolDisplayNameMapItem = record
@@ -132,121 +177,33 @@ type
     DisplayName: string;
   end;
 
-{ TDisplayBlockAggregator }
+{ TAnthropicDisplayBlockAggregator }
 
-destructor TDisplayBlockAggregator.Destroy;
-begin
-  FreeChatDisplayBlocks(FBlocks);
-  inherited;
-end;
-
-function TDisplayBlockAggregator.StartBlock(const Kind: string): TChatDisplayBlock;
-begin
-  Result := TChatDisplayBlock.Create;
-  Result.Kind := Kind;
-  FBlocks := FBlocks + [Result];
-  FCurrent := Result;
-end;
-
-procedure TDisplayBlockAggregator.EnsureKind(const Kind: string);
-begin
-  {--- Merge consecutive same-kind deltas into a single block; switch otherwise. }
-  if not Assigned(FCurrent) or not SameText(FCurrent.Kind, Kind) then
-    StartBlock(Kind);
-end;
-
-procedure TDisplayBlockAggregator.AppendAssistantDelta(const Delta: string);
-begin
-  if Delta.IsEmpty then
-    Exit;
-  EnsureKind(DISPLAY_BLOCK_KIND_ASSISTANT);
-  FCurrent.Text := FCurrent.Text + Delta;
-end;
-
-procedure TDisplayBlockAggregator.AppendAssistantText(const Text: string);
-begin
-  if Text.IsEmpty then
-    Exit;
-  EnsureKind(DISPLAY_BLOCK_KIND_ASSISTANT);
-  FCurrent.Text := FCurrent.Text + Text;
-end;
-
-procedure TDisplayBlockAggregator.AppendReasoningDelta(const Delta: string);
-begin
-  if Delta.IsEmpty then
-    Exit;
-  EnsureKind(DISPLAY_BLOCK_KIND_REASONING);
-  FCurrent.Text := FCurrent.Text + Delta;
-end;
-
-procedure TDisplayBlockAggregator.RegisterToolUseStop(
+procedure TAnthropicDisplayBlockAggregator.RegisterToolUseStop(
   const Snapshot: TToolCallSnapshot;
   const DisplayTitle: string);
-var
-  Block: TChatDisplayBlock;
-  Title: string;
 begin
-  {--- A tool invocation is emitted only when its input is complete so
-       the persisted title carries the actual command (e.g. the bash
-       line or the text_editor view path) instead of the opaque
-       block-type identifier. }
-  Block := StartBlock(DISPLAY_BLOCK_KIND_TOOL_STATUS);
-
-  Title := DisplayTitle.Trim;
+  {--- Anthropic exposes the complete tool input only at block_stop. This
+       adapter resolves the title from the Anthropic snapshot, then feeds the
+       vendor-neutral Pythia aggregator. }
+  var Title := DisplayTitle.Trim;
   if Title.IsEmpty then
     Title := Snapshot.ToolName.Trim;
   if Title.IsEmpty then
     Title := Snapshot.BlockType.ToString;
 
-  Block.Title := Title;
-  FCurrentToolEntry := Block;
+  AppendToolUse(Snapshot.ToolId, Title);
 end;
 
-procedure TDisplayBlockAggregator.AppendToolResultDelta(const Delta: string);
-begin
-  if Delta.IsEmpty then
-    Exit;
-
-  {--- Stream the result text into the tool-call entry opened by the
-       matching RegisterToolUseStop. Falls back to opening a standalone
-       tool-output block when a result arrives without a preceding
-       tool_use (defensive - shouldn't happen on a well-formed stream). }
-  if not Assigned(FCurrentToolEntry) then
-    begin
-      FCurrentToolEntry := StartBlock(DISPLAY_BLOCK_KIND_TOOL_OUTPUT);
-      FCurrent := FCurrentToolEntry;
-    end;
-
-  FCurrentToolEntry.Text := FCurrentToolEntry.Text + Delta;
-  FCurrent := FCurrentToolEntry;
-end;
-
-procedure TDisplayBlockAggregator.RegisterToolResultStop(
+procedure TAnthropicDisplayBlockAggregator.RegisterToolResultStop(
   const Snapshot: TToolResultSnapshot);
 begin
-  {--- Errors are only marked at content_block_stop; demote the open
-       tool entry to the error kind when the server reports IsError. }
-  if Snapshot.IsError and Assigned(FCurrentToolEntry) then
-    FCurrentToolEntry.Kind := DISPLAY_BLOCK_KIND_TOOL_ERROR;
+  {--- Anthropic reports the final error state at block_stop. Pythia only
+       needs to know which tool block must become an error block. }
+  if Snapshot.IsError then
+    MarkToolError(Snapshot.ToolUseId);
 
-  FCurrentToolEntry := nil;
-  FCurrent := nil;
-end;
-
-procedure TDisplayBlockAggregator.CloseCurrent;
-begin
-  FCurrent := nil;
-  FCurrentToolEntry := nil;
-end;
-
-function TDisplayBlockAggregator.CloneAll: TArray<TChatDisplayBlock>;
-begin
-  Result := CloneChatDisplayBlocks(FBlocks);
-end;
-
-function TDisplayBlockAggregator.IsEmpty: Boolean;
-begin
-  Result := Length(FBlocks) = 0;
+  CloseCurrent;
 end;
 
 { TToolDisplayTitle }
@@ -290,10 +247,8 @@ const
     (InternalName: 'tool_search_tool_result'; DisplayName: 'Tool search'),
     (InternalName: 'mcp_tool'; DisplayName: 'MCP tool')
   );
-var
-  Normalized: string;
 begin
-  Normalized := AInternalName.Trim.ToLowerInvariant;
+  var Normalized := AInternalName.Trim.ToLowerInvariant;
   if Normalized.IsEmpty then
     Exit('');
 
@@ -324,25 +279,23 @@ class function TToolDisplayTitle.FromInput(
   const ABlockType: TContentBlockType;
   const AToolName, AInputJson: string): string;
 var
-  Reader: TJsonReader;
   Command: string;
   Path: string;
   Query: string;
   Url: string;
   Action: string;
-  ToolTitle: string;
 begin
   {--- The input JSON is complete only at content_block_stop. This helper keeps
        title extraction close to stream display concerns while avoiding
        localized labels in the vendor service. }
-  ToolTitle := BaseTitle(ABlockType, AToolName);
+  var ToolTitle := BaseTitle(ABlockType, AToolName);
 
   Result := ToolTitle;
 
   if AInputJson.Trim.IsEmpty then
     Exit;
 
-  Reader := TJsonReader.Parse(AInputJson);
+  var Reader := TJsonReader.Parse(AInputJson);
   if not Reader.IsValid then
     Exit;
 
@@ -405,10 +358,8 @@ end;
 class procedure TToolUseDisplayDetails.AppendDetailLine(
   const Builder: TStringBuilder;
   const LabelName, Value: string);
-var
-  Text: string;
 begin
-  Text := Value.Trim;
+  var Text := Value.Trim;
   if Text.IsEmpty then
     Exit;
 
@@ -418,10 +369,8 @@ end;
 class procedure TToolUseDisplayDetails.AppendInputJson(
   const Builder: TStringBuilder;
   const LabelName, Value: string);
-var
-  Text: string;
 begin
-  Text := FormatJson(Value);
+  var Text := FormatJson(Value);
   if Text.IsEmpty or SameText(Text, '{}') then
     Exit;
 
@@ -431,14 +380,12 @@ end;
 
 class function TToolUseDisplayDetails.FormatJson(
   const Value: string): string;
-var
-  Reader: TJsonReader;
 begin
   Result := Value.Trim;
   if Result.IsEmpty then
     Exit;
 
-  Reader := TJsonReader.Parse(Result);
+  var Reader := TJsonReader.Parse(Result);
   if Reader.IsValid then
     Result := Reader.Format(2).Trim;
 end;
@@ -451,46 +398,33 @@ end;
 
 class function TToolUseDisplayDetails.IsComputerTool(
   const Snapshot: TToolCallSnapshot): Boolean;
-var
-  ToolName: string;
 begin
-  ToolName := Snapshot.ToolName.Trim.ToLowerInvariant;
+  var ToolName := Snapshot.ToolName.Trim.ToLowerInvariant;
   Result := (ToolName = 'computer') or ToolName.StartsWith('computer_');
 end;
 
 class function TToolUseDisplayDetails.BuildComputerDetails(
   const Snapshot: TToolCallSnapshot;
   out Details: string): Boolean;
-var
-  Reader: TJsonReader;
-  Builder: TStringBuilder;
-  Action: string;
-  Coordinate: string;
-  StartCoordinate: string;
-  InputText: string;
-  Key: string;
-  ScrollDirection: string;
-  ScrollAmount: string;
-  Duration: string;
 begin
   Details := '';
   if not IsComputerTool(Snapshot) then
     Exit(False);
 
-  Reader := TJsonReader.Parse(Snapshot.InputJson);
+  var Reader := TJsonReader.Parse(Snapshot.InputJson);
   if not Reader.IsValid then
     Exit(False);
 
-  Action := HumanizeIdentifier(Reader.AsString('action'));
-  Coordinate := Reader.AsString('coordinate').Trim;
-  StartCoordinate := Reader.AsString('start_coordinate').Trim;
-  InputText := Reader.AsString('text').Trim;
-  Key := Reader.AsString('key').Trim;
-  ScrollDirection := HumanizeIdentifier(Reader.AsString('scroll_direction'));
-  ScrollAmount := Reader.AsString('scroll_amount').Trim;
-  Duration := Reader.AsString('duration').Trim;
+  var Action := HumanizeIdentifier(Reader.AsString('action'));
+  var Coordinate := Reader.AsString('coordinate').Trim;
+  var StartCoordinate := Reader.AsString('start_coordinate').Trim;
+  var InputText := Reader.AsString('text').Trim;
+  var Key := Reader.AsString('key').Trim;
+  var ScrollDirection := HumanizeIdentifier(Reader.AsString('scroll_direction'));
+  var ScrollAmount := Reader.AsString('scroll_amount').Trim;
+  var Duration := Reader.AsString('duration').Trim;
 
-  Builder := TStringBuilder.Create;
+  var Builder := TStringBuilder.Create;
   try
     Builder.AppendLine('Computer action details:');
     AppendDetailLine(Builder, 'Action', Action);
@@ -512,14 +446,12 @@ end;
 class function TToolUseDisplayDetails.BuildMCPToolUseDetails(
   const Snapshot: TToolCallSnapshot;
   out Details: string): Boolean;
-var
-  Builder: TStringBuilder;
 begin
   Details := '';
   if Snapshot.BlockType <> TContentBlockType.mcp_tool_use then
     Exit(False);
 
-  Builder := TStringBuilder.Create;
+  var Builder := TStringBuilder.Create;
   try
     Builder.AppendLine('MCP tool call details:');
     AppendDetailLine(Builder, 'Server', Snapshot.ServerName);
@@ -548,10 +480,8 @@ end;
 class procedure TToolResultDisplayDetails.AppendDetailLine(
   const Builder: TStringBuilder;
   const LabelName, Value: string);
-var
-  Text: string;
 begin
-  Text := Value.Trim;
+  var Text := Value.Trim;
   if Text.IsEmpty then
     Exit;
 
@@ -561,12 +491,10 @@ end;
 class function TToolResultDisplayDetails.BuildToolErrorSummary(
   const AFailureLabel, AErrorCode, AErrorMessage: string): string;
 var
-  Code: string;
-  Message: string;
   ErrorText: string;
 begin
-  Code := HumanizeIdentifier(AErrorCode);
-  Message := AErrorMessage.Trim;
+  var Code := HumanizeIdentifier(AErrorCode);
+  var Message := AErrorMessage.Trim;
 
   if Code.IsEmpty and Message.IsEmpty then
     Exit('');
@@ -584,22 +512,18 @@ end;
 
 class function TToolResultDisplayDetails.BuildToolErrorSummary(
   const AFailureLabel, ARawContent: string): string;
-var
-  ErrorCode: string;
-  ErrorMessage: string;
-  Reader: TJsonReader;
 begin
   Result := '';
 
-  Reader := TJsonReader.Parse(ARawContent);
+  var Reader := TJsonReader.Parse(ARawContent);
   if not Reader.IsValid then
     Exit;
 
-  ErrorCode := Reader.AsString('error_code').Trim;
+  var ErrorCode := Reader.AsString('error_code').Trim;
   if ErrorCode.IsEmpty then
     ErrorCode := Reader.AsString('content.error_code').Trim;
 
-  ErrorMessage := Reader.AsString('error_message').Trim;
+  var ErrorMessage := Reader.AsString('error_message').Trim;
   if ErrorMessage.IsEmpty then
     ErrorMessage := Reader.AsString('message').Trim;
   if ErrorMessage.IsEmpty then
@@ -611,29 +535,20 @@ end;
 class function TToolResultDisplayDetails.BuildWebFetchDetails(
   const Block: TContentBlock;
   out Details: string): Boolean;
-var
-  FetchBlock: TWebFetchToolResultBlock;
-  Content: TWebFetchToolResultBlockContent;
-  Builder: TStringBuilder;
-  Title: string;
-  Url: string;
-  RetrievedAt: string;
-  MediaType: string;
-  HasDetails: Boolean;
 begin
   Details := '';
 
   if not Assigned(Block.ToolContent) then
     Exit(False);
 
-  FetchBlock := Block.ToolContent.WebFetchToolResultBlock;
+  var FetchBlock := Block.ToolContent.WebFetchToolResultBlock;
   if (not Assigned(FetchBlock)) or (not FetchBlock.HasValue) then
     begin
       Details := BuildToolErrorSummary('Fetch failed', Block.RawContent);
       Exit(not Details.IsEmpty);
     end;
 
-  Content := FetchBlock.Content;
+  var Content := FetchBlock.Content;
   if not Assigned(Content) then
     Exit(False);
 
@@ -643,8 +558,8 @@ begin
       Exit(not Details.IsEmpty);
     end;
 
-  Title := '';
-  MediaType := '';
+  var Title := '';
+  var MediaType := '';
 
   if Assigned(Content.Content) then
     begin
@@ -653,13 +568,13 @@ begin
         MediaType := Content.Content.Source.MediaType.Trim;
     end;
 
-  Url := Content.Url.Trim;
-  RetrievedAt := Content.RetrievedAt.Trim;
+  var Url := Content.Url.Trim;
+  var RetrievedAt := Content.RetrievedAt.Trim;
 
-  Builder := TStringBuilder.Create;
+  var Builder := TStringBuilder.Create;
   try
     Builder.AppendLine('Fetched web content:');
-    HasDetails := False;
+    var HasDetails := False;
 
     if not Title.IsEmpty then
       begin
@@ -695,47 +610,39 @@ end;
 class function TToolResultDisplayDetails.BuildWebSearchDetails(
   const Block: TContentBlock;
   out Details: string): Boolean;
-var
-  SearchBlock: TWebSearchToolResultBlock;
-  ContentCount: Integer;
-  Builder: TStringBuilder;
-  ResultIndex: Integer;
-  Title: string;
-  Url: string;
-  PageAge: string;
 begin
   Details := '';
 
   if not Assigned(Block.ToolContent) then
     Exit(False);
 
-  SearchBlock := Block.ToolContent.WebSearchToolResultBlock;
+  var SearchBlock := Block.ToolContent.WebSearchToolResultBlock;
   if (not Assigned(SearchBlock)) or (not SearchBlock.HasValue) then
     begin
       Details := BuildToolErrorSummary('Search failed', Block.RawContent);
       Exit(not Details.IsEmpty);
     end;
 
-  ContentCount := Length(SearchBlock.Content);
+  var ContentCount := Length(SearchBlock.Content);
   if ContentCount = 0 then
     Exit(False);
 
-  Builder := TStringBuilder.Create;
+  var Builder := TStringBuilder.Create;
   try
     if ContentCount = 1 then
       Builder.AppendLine('Found 1 web result:')
     else
       Builder.AppendLine(Format('Found %d web results:', [ContentCount]));
 
-    ResultIndex := 0;
+    var ResultIndex := 0;
     for var Item in SearchBlock.Content do
       begin
         if not Assigned(Item) then
           Continue;
 
-        Title := Item.Title.Trim;
-        Url := Item.Url.Trim;
-        PageAge := Item.PageAge.Trim;
+        var Title := Item.Title.Trim;
+        var Url := Item.Url.Trim;
+        var PageAge := Item.PageAge.Trim;
 
         if Title.IsEmpty and Url.IsEmpty then
           Continue;
@@ -767,27 +674,20 @@ end;
 class function TToolResultDisplayDetails.BuildToolSearchDetails(
   const Block: TContentBlock;
   out Details: string): Boolean;
-var
-  SearchBlock: TToolSearchToolResultBlock;
-  Content: TToolSearchToolResultBlockContent;
-  ContentCount: Integer;
-  Builder: TStringBuilder;
-  ResultIndex: Integer;
-  ToolName: string;
 begin
   Details := '';
 
   if not Assigned(Block.ToolContent) then
     Exit(False);
 
-  SearchBlock := Block.ToolContent.ToolSearchToolResultBlock;
+  var SearchBlock := Block.ToolContent.ToolSearchToolResultBlock;
   if (not Assigned(SearchBlock)) or (not SearchBlock.HasValue) then
     begin
       Details := BuildToolErrorSummary('Tool search failed', Block.RawContent);
       Exit(not Details.IsEmpty);
     end;
 
-  Content := SearchBlock.Content;
+  var Content := SearchBlock.Content;
   if not Assigned(Content) then
     Exit(False);
 
@@ -801,27 +701,27 @@ begin
       Exit(not Details.IsEmpty);
     end;
 
-  ContentCount := Length(Content.ToolReferences);
+  var ContentCount := Length(Content.ToolReferences);
   if ContentCount = 0 then
     begin
       Details := 'No matching tools found.';
       Exit(True);
     end;
 
-  Builder := TStringBuilder.Create;
+  var Builder := TStringBuilder.Create;
   try
     if ContentCount = 1 then
       Builder.AppendLine('Found 1 tool reference:')
     else
       Builder.AppendLine(Format('Found %d tool references:', [ContentCount]));
 
-    ResultIndex := 0;
+    var ResultIndex := 0;
     for var Item in Content.ToolReferences do
       begin
         if not Assigned(Item) then
           Continue;
 
-        ToolName := Item.ToolName.Trim;
+        var ToolName := Item.ToolName.Trim;
         if ToolName.IsEmpty then
           Continue;
 
@@ -841,20 +741,13 @@ end;
 class function TToolResultDisplayDetails.BuildMCPToolDetails(
   const Block: TContentBlock;
   out Details: string): Boolean;
-var
-  MCPBlock: TMCPToolResultBlock;
-  Builder: TStringBuilder;
-  ContentCount: Integer;
-  TextBlockCount: Integer;
-  CitationCount: Integer;
-  TextValue: string;
 begin
   Details := '';
 
   if not Assigned(Block.ToolContent) then
     Exit(False);
 
-  MCPBlock := Block.ToolContent.MCPToolResultBlock;
+  var MCPBlock := Block.ToolContent.MCPToolResultBlock;
   if (not Assigned(MCPBlock)) or (not MCPBlock.HasValue) then
     begin
       if Block.IsError then
@@ -862,7 +755,7 @@ begin
       Exit(not Details.IsEmpty);
     end;
 
-  Builder := TStringBuilder.Create;
+  var Builder := TStringBuilder.Create;
   try
     if Block.IsError then
       Builder.AppendLine('MCP tool failed:')
@@ -871,25 +764,25 @@ begin
 
     if SameText(MCPBlock.&Type, 'text') then
       begin
-        TextValue := MCPBlock.StringContent.Trim;
+        var TextValue := MCPBlock.StringContent.Trim;
         if not TextValue.IsEmpty then
           AppendDetailLine(Builder, 'Text', TextValue);
       end
     else
       begin
-        ContentCount := Length(MCPBlock.Content);
+        var ContentCount := Length(MCPBlock.Content);
         if ContentCount > 0 then
           AppendDetailLine(Builder, 'Content blocks', IntToStr(ContentCount));
 
-        TextBlockCount := 0;
-        CitationCount := 0;
+        var TextBlockCount := 0;
+        var CitationCount := 0;
         for var Item in MCPBlock.Content do
           begin
             if not Assigned(Item) then
               Continue;
 
             Inc(CitationCount, Length(Item.Citations));
-            TextValue := Item.Text.Trim;
+            var TextValue := Item.Text.Trim;
             if TextValue.IsEmpty then
               Continue;
 
@@ -922,8 +815,6 @@ end;
 class function TToolResultDisplayDetails.TryFromEvent(
   const Event: TChatStream;
   out Details: string): Boolean;
-var
-  Block: TContentBlock;
 begin
   Details := '';
 
@@ -931,7 +822,7 @@ begin
      (Event.EventType <> TEventType.content_block_start) then
     Exit(False);
 
-  Block := Event.ContentBlock;
+  var Block := Event.ContentBlock;
   if not Assigned(Block) then
     Exit(False);
 

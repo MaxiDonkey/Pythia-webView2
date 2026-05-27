@@ -1,3 +1,51 @@
+#### 2026 May 27 - version 0.9.5
+
+- Agents - Anthropic demo
+  - **Pre-installed managed agent cards** (bin64\VCL_Anthropic\support\VCL_Anthropic-agent-cards.json): Added five ready-to-use cards for the agent selector — three defined inline in JSON (Research Analyst: single-agent claude-opus-4-7 with web_search/web_fetch always allowed; Local Project Review: coordinator + sub-agent code-inspector read-only on the uploaded local project; Supervised Exploration: coordinator + sub-agent explorer with confirmation on each tool) and two referenced by md_path (Safe Code Patch and Sandbox To Local Code Edit, see below).
+
+  - **Markdown agent definitions** (bin64\VCL_Anthropic\safe-code-patch-agent.md, sandbox-to-local-code-edit-agent.md): First externalized maps in YAML-frontmatter + Markdown format (loaded by Demo.Anthropic.Agent.Markdown) describing multi-agent coordinators controlling two sub-agents code-locator + patch-author / sandbox-editor; Safe Code Patch produces a unified diff reread for a small modification of the local project, Sandbox To Local Code Edit edits the uploaded sandbox copy and returns a manifest PYTHIA_LOCAL_APPLY_MANIFEST + diff intended to be applied locally by Pythia via the Demo.Anthropic.Agent.LocalApply mechanism.
+
+  - **Agent definition (Agent.Cards, Agent.Markdown, Agent.Fingerprint):** Typed model of agent cards (single or multi-agent with coordinator + sub-agents, built-in tools and always_allow / always_ask policies), loader from Markdown files to YAML frontmatter, and canonical fingerprint serving as cache key for provisioning.
+
+  - **Registre & provisionnement cloud (Agent.Registry, Agent.Provisioning, Agent.Cleanup):** Registre persistant des ressources Managed Agents (environments, agents, sub-agents, sessions, statuts/versions), provisionneur IAgentProvisioner qui résout une carte vers des IDs cloud vivants (avec cache + réutilisation de session), et purge TTL en tâche de fond (sessions, environnements, agents retirés).
+
+  - **Local project ↔ sandbox (Agent.Folder, Agent.LocalApply):** Upload of the selected project folder to the Files API (mount under /workspace/project, MaxFiles/MaxFileSize safeguards) and local application of the diffs returned by the agent — extraction of the Pythia manifests (PYTHIA_LOCAL_APPLY_MANIFEST_BEGIN/END, PYTHIA_UNIFIED_DIFF_BEGIN/END), validation of relative paths and unified application of patches to the project files.
+
+  - **Session runtime (Session.Transport, Session.Events, Session.Flow, Agent.TurnDisplay):** Cancelable SSE transport on thread worker via the Anthropic SDK, typed event parser (TSessionEventKind: AssistantText, Reasoning, ToolUse/Result, CustomToolUse, ToolConfirmationRequest, Outcome, Thread, Error, Done), IAgentSessionFlow orchestrator which drives a complete Managed Agents round, and IPythiaTurnDisplay adapter which translates this flow into TChatDisplayBlock on the UI side.
+
+  - **Finalization (Finalize):** Extraction of TFinalizeData (complete snapshot of the result of the round: model, response, reasoning, JSON request/response, files/images/videos/audio, error, blocks) and of the guard IEmitGuard / TEmitGuard guaranteeing a single call to the callback TManagedItemFinalizeProc.
+
+  - **Localization (Strs):** String table S_DEMO_* (tool confirmation titles, Allow/Deny labels, "Interrupted by the user" message, etc.) with loader TAnthropicDemoTranslations.Load / LoadFromLanguage for the demo.
+
+- Anthropic demo
+  - Extraction of the TFinalizeData / TEmitGuard pair to a dedicated unit (Demo.Anthropic.Finalize) and wiring of three new agent collaborators — IAgentCloudRegistry, IAgentProvisioner, IAgentSessionFlow — with an AfterSessionReloaded hook that restores the agent chip when reloading a session.
+
+  - Added support for managed agent turns in history replay — new helpers IsAgentTurn, BuildAgentAssistantText, ExtractAgentSessionId / ExtractAgentCardId, and LastAgentSessionId / LastAgentCardId to find the last summoned agent (on the model of LastContainerId).
+
+  -  Regroupement des helpers libres en scopes typés — TryUpdateSkillIDInSkillCardsFile devient TSkillCardFileUpdater.TryUpdateSkillId, et les fonctions QueuePythiaError/Success/Warning sont remplacées par les méthodes de classe TPythiaQueuedMessage.Error/Success/Warning.  
+
+- Pythia - Source\Delphi
+  - Added a Project manager (init/save/synchronize the projects.json file, select folder via ExecuteFolder), a WebDecisionDlg broker to communicate asynchronously with the JS layer, and an OnAfterSessionReloaded hook.
+
+  - WVPythia.Chat.DisplayBlocks.pas (new): Introduces the neutral aggregator IPythiaDisplayBlockAggregator / TPythiaDisplayBlockAggregator, which consolidates stream deltas (assistant, reasoning, tool-use, tool-result, status, errors) in real time into a sequence of persistent TChatDisplayBlocks — each vendor now translates its own events to this interface rather than exposing its raw snapshots to Pythia.
+  - DisplayBlocks persistence in chat towers — new properties FDisplayBlocksJson/NormalizeDisplayBlocks, parsers ChatDisplayBlockFromJson/ChatDisplayItemFromJson and hydration from disk via HydrateDisplayBlocksFromJsonFile.
+  - Introduction of three new browser events — WebDecisionDlgResponse, FolderSelection (native folder selector), FolderState (update of the project list) — and extraction of a ReleaseTurnLock helper to improve the reliability of lock release at the end of a managed turn.
+  - Added a TProjectState structure (DisplayName + FullPath) attached to the managed flow, in order to transport the active project throughout the pipeline of the prompt. 
+
+- Pythia - Assets\Javascript
+  - WebDecisionDlgTemplate.js (new): Web confirmation dialog triggered on the Delphi side via the web-decision-dlg-request message, returning the user's decision (OK / Cancel / Close) via the web-decision-dlg-response event — with i18n labels (AppI18n.t) and normalization of Delphi separators (#13#10, #10, #9) in the displayed text.
+
+  - Displaying the number of tool calls in the group header (e.g., "Tool calls (3)")
+
+  - Serializing tool-call entries via `runAfterDisplayStreams` so they are placed in the correct response block, with a new `resetResponse` option to reset the response area to the beginning of the stream.
+  - Adding a "Project" button to the input bubble (with its dropdown menu, dynamic label, and injection of the active project into the prompt payload) to allow the selection of a local folder.
+  - Implementing a "single-agent" lock to prevent the selection of a new agent while a chip is already in place.
+
+
+- **Show the tool count in Anthropic display block groups:** Updated `assets\scripts\DisplayTemplate.js` so collapsible tool groups now include the number of rendered tool entries in their summary, such as `Tools used (2)`. The count is refreshed for live streaming, persisted display-block replay, and i18n label updates.
+
+<br>
+
 #### 2026 May 19 - version 0.9.4
 
 - Switch the VCL_Anthropic stream flow to event callbacks

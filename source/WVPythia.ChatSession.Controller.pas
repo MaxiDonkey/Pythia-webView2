@@ -120,7 +120,9 @@ type
     FReponseAudio: TArray<string>;
     FReponseVideo: TArray<string>;
     FDisplayBlocks: TArray<TChatDisplayBlock>;
+    FDisplayBlocksJson: string;
     procedure SetDisplayBlocks(const Value: TArray<TChatDisplayBlock>);
+    procedure SetDisplayBlocksJson(const Value: string);
   public
     property Id: string read FId write FId;
     property Index: Integer read FIndex write FIndex;
@@ -140,7 +142,9 @@ type
     property ReponseAudio: TArray<string> read FReponseAudio write FReponseAudio;
     property ReponseVideo: TArray<string> read FReponseVideo write FReponseVideo;
     property DisplayBlocks: TArray<TChatDisplayBlock> read FDisplayBlocks write SetDisplayBlocks;
+    property DisplayBlocksJson: string read FDisplayBlocksJson write SetDisplayBlocksJson;
 
+    procedure NormalizeDisplayBlocks;
     destructor Destroy; override;
   end;
 
@@ -175,6 +179,7 @@ type
   private
     FRuntime: IPersistentChatRuntime;
     procedure NormalizeSessions;
+    procedure HydrateDisplayBlocksFromJsonFile(const FileName: string);
   public
     function AddItem: TChatSession; override;
     procedure SetRuntime(const Value: IPersistentChatRuntime);
@@ -298,10 +303,13 @@ procedure FreeChatDisplayBlocks(var Values: TArray<TChatDisplayBlock>);
 function ChatDisplayBlocksToJson(
   const Values: TArray<TChatDisplayBlock>): string;
 
+function ChatDisplayBlocksFromJson(
+  const Value: string): TArray<TChatDisplayBlock>;
+
 implementation
 
 uses
-  System.DateUtils, System.Generics.Defaults, System.JSON,
+  System.DateUtils, System.Generics.Defaults, System.IOUtils, System.JSON,
   WVPythia.Strings.Escape;
 
 procedure FreeChatDisplayItems(var Values: TArray<TChatDisplayItem>);
@@ -391,6 +399,161 @@ begin
   end;
 end;
 
+function JsonObjectValue(
+  const Obj: TJSONObject;
+  const Name, AlternateName: string): TJSONValue;
+begin
+  Result := nil;
+
+  if not Assigned(Obj) then
+    Exit;
+
+  Result := Obj.GetValue(Name);
+  if (not Assigned(Result)) and (not AlternateName.Trim.IsEmpty) then
+    Result := Obj.GetValue(AlternateName);
+end;
+
+function JsonObjectString(
+  const Obj: TJSONObject;
+  const Name, AlternateName: string): string;
+begin
+  Result := EmptyStr;
+
+  var Value := JsonObjectValue(Obj, Name, AlternateName);
+  if not Assigned(Value) then
+    Exit;
+
+  if Value is TJSONString then
+    Result := TJSONString(Value).Value
+  else
+    Result := Value.Value;
+end;
+
+function JsonObjectArray(
+  const Obj: TJSONObject;
+  const Name, AlternateName: string): TJSONArray;
+begin
+  Result := nil;
+
+  var Value := JsonObjectValue(Obj, Name, AlternateName);
+  if Value is TJSONArray then
+    Result := TJSONArray(Value);
+end;
+
+function ChatDisplayItemFromJson(const Value: TJSONValue): TChatDisplayItem;
+begin
+  Result := nil;
+
+  if not (Value is TJSONObject) then
+    Exit;
+
+  var Obj := TJSONObject(Value);
+
+  Result := TChatDisplayItem.Create;
+  Result.Title := JsonObjectString(Obj, 'title', 'Title');
+  Result.Text := JsonObjectString(Obj, 'text', 'Text');
+  Result.Url := JsonObjectString(Obj, 'url', 'Url');
+  Result.Path := JsonObjectString(Obj, 'path', 'Path');
+  Result.MimeType := JsonObjectString(Obj, 'mimeType', 'MimeType');
+end;
+
+function ChatDisplayBlockFromJson(const Value: TJSONValue): TChatDisplayBlock;
+begin
+  Result := nil;
+
+  if not (Value is TJSONObject) then
+    Exit;
+
+  var Obj := TJSONObject(Value);
+
+  Result := TChatDisplayBlock.Create;
+  Result.Kind := JsonObjectString(Obj, 'kind', 'Kind');
+  Result.Title := JsonObjectString(Obj, 'title', 'Title');
+  Result.Text := JsonObjectString(Obj, 'text', 'Text');
+  Result.Url := JsonObjectString(Obj, 'url', 'Url');
+
+  var ItemsJson := JsonObjectArray(Obj, 'items', 'Items');
+  if not Assigned(ItemsJson) then
+    Exit;
+
+  var Items: TArray<TChatDisplayItem>;
+  SetLength(Items, ItemsJson.Count);
+
+  var Count := 0;
+  for var I := 0 to ItemsJson.Count - 1 do
+    begin
+      var Item := ChatDisplayItemFromJson(ItemsJson.Items[I]);
+      if not Assigned(Item) then
+        Continue;
+
+      Items[Count] := Item;
+      Inc(Count);
+    end;
+
+  if Count <> Length(Items) then
+    SetLength(Items, Count);
+
+  Result.Items := Items;
+end;
+
+function ChatDisplayBlocksFromJson(
+  const Value: string): TArray<TChatDisplayBlock>;
+begin
+  Result := nil;
+
+  if Value.Trim.IsEmpty then
+    Exit;
+
+  var Root: TJSONValue := nil;
+  try
+    Root := TJSONObject.ParseJSONValue(Value);
+    if Assigned(Root) then
+      begin
+        var BlocksJson: TJSONArray := nil;
+        if Root is TJSONArray then
+          BlocksJson := TJSONArray(Root)
+        else
+        if Root is TJSONObject then
+          begin
+            BlocksJson := JsonObjectArray(TJSONObject(Root), 'displayBlocks', 'DisplayBlocks');
+            if not Assigned(BlocksJson) then
+              BlocksJson := JsonObjectArray(TJSONObject(Root), 'blocks', 'Blocks');
+          end;
+
+        if Assigned(BlocksJson) then
+          begin
+            SetLength(Result, BlocksJson.Count);
+
+            var Count := 0;
+            for var I := 0 to BlocksJson.Count - 1 do
+              begin
+                var Block := ChatDisplayBlockFromJson(BlocksJson.Items[I]);
+                if not Assigned(Block) then
+                  Continue;
+
+                Result[Count] := Block;
+                Inc(Count);
+              end;
+
+            if Count <> Length(Result) then
+              SetLength(Result, Count);
+          end;
+      end;
+  except
+    FreeChatDisplayBlocks(Result);
+  end;
+
+  Root.Free;
+end;
+
+function ResolveChatSessionListFileName(const FileName: string): string;
+begin
+  Result := FileName;
+  if Result.Trim.IsEmpty then
+    Result := TChatSessionList.DefaultFileName;
+  Result := TPath.GetFullPath(Result);
+end;
+
 { TChatDisplayItem }
 
 function TChatDisplayItem.Clone: TChatDisplayItem;
@@ -443,6 +606,37 @@ procedure TChatTurn.SetDisplayBlocks(const Value: TArray<TChatDisplayBlock>);
 begin
   FreeChatDisplayBlocks(FDisplayBlocks);
   FDisplayBlocks := Value;
+  FDisplayBlocksJson := ChatDisplayBlocksToJson(FDisplayBlocks);
+end;
+
+procedure TChatTurn.SetDisplayBlocksJson(const Value: string);
+begin
+  FDisplayBlocksJson := Value;
+
+  if FDisplayBlocksJson.Trim.IsEmpty then
+    Exit;
+
+  NormalizeDisplayBlocks;
+end;
+
+procedure TChatTurn.NormalizeDisplayBlocks;
+begin
+  if FDisplayBlocksJson.Trim.IsEmpty then
+    begin
+      if Length(FDisplayBlocks) > 0 then
+        FDisplayBlocksJson := ChatDisplayBlocksToJson(FDisplayBlocks);
+      Exit;
+    end;
+
+  var Parsed := ChatDisplayBlocksFromJson(FDisplayBlocksJson);
+  if (Length(Parsed) = 0) and (FDisplayBlocksJson.Trim <> '[]') then
+    begin
+      FreeChatDisplayBlocks(Parsed);
+      Exit;
+    end;
+
+  FreeChatDisplayBlocks(FDisplayBlocks);
+  FDisplayBlocks := Parsed;
 end;
 
 { TChatSessionRuntime }
@@ -1085,11 +1279,84 @@ end;
 
 procedure TChatSessionList.NormalizeSessions;
 begin
-  { Intentionally conservative: no schema mutation on load. }
+  for var Session in Data do
+    if Assigned(Session) then
+      for var Turn in Session.Data do
+        if Assigned(Turn) then
+          Turn.NormalizeDisplayBlocks;
+end;
+
+procedure TChatSessionList.HydrateDisplayBlocksFromJsonFile(const FileName: string);
+begin
+  if FileName.Trim.IsEmpty or (not TFile.Exists(FileName)) then
+    Exit;
+
+  var Raw := TFile.ReadAllText(FileName, TEncoding.UTF8);
+  if Raw.Trim.IsEmpty then
+    Exit;
+
+  var RootValue: TJSONValue := nil;
+  try
+    RootValue := TJSONObject.ParseJSONValue(Raw);
+    if not (RootValue is TJSONObject) then
+      Exit;
+
+    var SessionsJson := JsonObjectArray(TJSONObject(RootValue), 'data', 'Data');
+    if not Assigned(SessionsJson) then
+      Exit;
+
+    var SessionCount := Length(Data);
+    if SessionsJson.Count < SessionCount then
+      SessionCount := SessionsJson.Count;
+
+    for var SessionIndex := 0 to SessionCount - 1 do
+      begin
+        if not Assigned(Data[SessionIndex]) or
+           (not (SessionsJson.Items[SessionIndex] is TJSONObject)) then
+          Continue;
+
+        var TurnsJson := JsonObjectArray(
+          TJSONObject(SessionsJson.Items[SessionIndex]), 'data', 'Data');
+
+        if not Assigned(TurnsJson) then
+          Continue;
+
+        var TurnCount := Length(Data[SessionIndex].Data);
+        if TurnsJson.Count < TurnCount then
+          TurnCount := TurnsJson.Count;
+
+        for var TurnIndex := 0 to TurnCount - 1 do
+          begin
+            var Turn := Data[SessionIndex].Data[TurnIndex];
+            if not Assigned(Turn) or
+               (not (TurnsJson.Items[TurnIndex] is TJSONObject)) then
+              Continue;
+
+            var TurnJson := TJSONObject(TurnsJson.Items[TurnIndex]);
+            var BlocksJsonText := JsonObjectString(
+              TurnJson, 'displayBlocksJson', 'DisplayBlocksJson');
+
+            if BlocksJsonText.Trim.IsEmpty then
+              begin
+                var BlocksJson := JsonObjectArray(
+                  TurnJson, 'displayBlocks', 'DisplayBlocks');
+                if Assigned(BlocksJson) then
+                  BlocksJsonText := BlocksJson.ToJSON;
+              end;
+
+            if not BlocksJsonText.Trim.IsEmpty then
+              Turn.DisplayBlocksJson := BlocksJsonText;
+          end;
+      end;
+  finally
+    RootValue.Free;
+  end;
 end;
 
 class function TChatSessionList.Reload(const FileName: string): TChatSessionList;
 begin
+  var EffectiveFileName := ResolveChatSessionListFileName(FileName);
+
   if not FileName.Trim.IsEmpty then
     Result := TChatSessionList.Load(FileName) as TChatSessionList
   else
@@ -1098,6 +1365,7 @@ begin
   if not Assigned(Result) then
     Result := TChatSessionList.Create;
 
+  Result.HydrateDisplayBlocksFromJsonFile(EffectiveFileName);
   Result.NormalizeSessions;
 end;
 

@@ -22,7 +22,7 @@ uses
   Anthropic.MemoryStore, Anthropic.Files.Helper;
 
 const
-  VERSION = '1.3.1';
+  VERSION = '1.3.2';
 
 type
   /// <summary>
@@ -1173,6 +1173,8 @@ type
   TSessionResourceDeleted = Anthropic.Sessions.TSessionResourceDeleted;
   TSessionThread = Anthropic.Sessions.TSessionThread;
   TSessionThreadList = Anthropic.Sessions.TSessionThreadList;
+  TSessionStreamEvent = Anthropic.Sessions.TSessionStreamEvent;
+  TSessionStreamStatus = Anthropic.Sessions.TSessionStreamStatus;
   TSessionStream = Anthropic.Sessions.TSessionStream;
 
   TAsynSession = Anthropic.Sessions.TAsynSession;
@@ -1193,10 +1195,12 @@ type
   TPromiseSessionResourceDeleted = Anthropic.Sessions.TPromiseSessionResourceDeleted;
   TAsynSessionThread = Anthropic.Sessions.TAsynSessionThread;
   TPromiseSessionThread = Anthropic.Sessions.TPromiseSessionThread;
-  TAsynSessionThreadList = Anthropic.Sessions.TSessionThreadList;
+  TAsynSessionThreadList = Anthropic.Sessions.TAsynSessionThreadList;
   TPromiseSessionThreadList = Anthropic.Sessions.TPromiseSessionThreadList;
   TAsynSessionStream = Anthropic.Sessions.TAsynSessionStream;
   TPromiseSessionStream = Anthropic.Sessions.TPromiseSessionStream;
+  TAsynSessionStreamStatus = Anthropic.Sessions.TAsynSessionStreamStatus;
+  TPromiseSessionStreamStatus = Anthropic.Sessions.TPromiseSessionStreamStatus;
 
   TSessionsAbstractSupport = Anthropic.Sessions.TSessionsAbstractSupport;
   TSessionsAsynchronousSupport = Anthropic.Sessions.TSessionsAsynchronousSupport;

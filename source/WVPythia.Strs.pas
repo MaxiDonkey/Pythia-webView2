@@ -25,6 +25,8 @@ var
 
   S_DIALOG_SERVICE_NOT_ASSIGNETD: string =
     'DialogService not assigned';
+  S_WEB_DECISION_DLG_ALREADY_PENDING_FMT: string =
+    'A WebDecisionDlg request is already pending: %s';
 
 
   {--- Shared with user }
@@ -110,6 +112,16 @@ var
     'No plugin for /%s';
   S_TOOL_GROUP_LABEL: string =
     'Tools used';
+  S_WEB_DECISION_DLG_TITLE: string =
+    'Confirmation';
+  S_WEB_DECISION_DLG_MESSAGE: string =
+    'Please confirm.';
+  S_WEB_DECISION_DLG_OK: string =
+    'OK';
+  S_WEB_DECISION_DLG_CANCEL: string =
+    'Cancel';
+  S_WEB_DECISION_DLG_CLOSE: string =
+    'Close';
 
 implementation
 
@@ -294,6 +306,31 @@ begin
     JSONObject.AsString(
     'display.toolGroup.label',
     S_TOOL_GROUP_LABEL);
+
+  S_WEB_DECISION_DLG_TITLE :=
+    JSONObject.AsString(
+    'more.web_decision_dlg_title',
+    S_WEB_DECISION_DLG_TITLE);
+
+  S_WEB_DECISION_DLG_MESSAGE :=
+    JSONObject.AsString(
+    'more.web_decision_dlg_message',
+    S_WEB_DECISION_DLG_MESSAGE);
+
+  S_WEB_DECISION_DLG_OK :=
+    JSONObject.AsString(
+    'more.web_decision_dlg_ok',
+    S_WEB_DECISION_DLG_OK);
+
+  S_WEB_DECISION_DLG_CANCEL :=
+    JSONObject.AsString(
+    'more.web_decision_dlg_cancel',
+    S_WEB_DECISION_DLG_CANCEL);
+
+  S_WEB_DECISION_DLG_CLOSE :=
+    JSONObject.AsString(
+    'more.web_decision_dlg_close',
+    S_WEB_DECISION_DLG_CLOSE);
 
   {--- Add custom translation }
   if Assigned(CustomProc) then
