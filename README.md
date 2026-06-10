@@ -19,7 +19,7 @@
 
 ## Table of Contents
 
-- [Changelog](docs/changelog.md#2026-may-27---version-095)
+- [Changelog](docs/changelog.md#2026-june-9---version-096)
 - [Get started in a few lines](#get-started-in-a-few-lines)
 - [What Pythia-Webview2 is](#what-pythia-webview2-is)
 - [Vendor-native by design](#vendor-native-by-design)
