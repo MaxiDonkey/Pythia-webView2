@@ -435,6 +435,7 @@
     "image_creation_aborted_error": "Aucun modèle par défaut configuré : création d'image interrompue",
     "video_creation_aborted_error": "Aucun modèle par défaut configuré : création de vidéo interrompue",
     "audio_creation_aborted_error": "Aucun modèle par défaut configuré : création audio interrompue",
+    "stt_operation_aborted_error": "Aucun modèle par défaut configuré : opération STT interrompue",
     "tts_operation_aborted_error": "Aucun modèle par défaut configuré : opération TTS interrompue",
     "deep_research_operation_aborted_error": "Aucun modèle par défaut configuré : opération de recherche approfondie interrompue",
     "missing_default_models_error": "Modèles par défaut manquants pour certaines catégories. #10 Vérifiez les paramètres des modèles",

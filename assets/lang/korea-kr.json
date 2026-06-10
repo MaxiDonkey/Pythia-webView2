@@ -435,6 +435,7 @@
     "image_creation_aborted_error": "기본 모델이 구성되지 않음: 이미지 생성이 중단되었습니다",
     "video_creation_aborted_error": "기본 모델이 구성되지 않음: 동영상 생성이 중단되었습니다",
     "audio_creation_aborted_error": "기본 모델이 구성되지 않음: 오디오 생성이 중단되었습니다",
+    "stt_operation_aborted_error": "기본 모델이 구성되지 않음: STT 작업이 중단되었습니다",
     "tts_operation_aborted_error": "기본 모델이 구성되지 않음: TTS 작업이 중단되었습니다",
     "deep_research_operation_aborted_error": "기본 모델이 구성되지 않음: 심층 조사가 중단되었습니다",
     "missing_default_models_error": "일부 카테고리에 기본 모델이 누락되었습니다. #10 모델 설정을 확인하세요",

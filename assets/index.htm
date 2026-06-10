@@ -101,6 +101,7 @@
   --input-button-text: #ffffff;
   --input-button-hover-bg: #ffffff;
   --input-button-hover-text: #111;
+  --input-audio-recording-color: #ff5a5a;
 
   --input-text: #e8e8e8;
   --input-welcome-text: #f3f3f3;
@@ -215,6 +216,7 @@
   --input-button-text: #1f2937;
   --input-button-hover-bg: #1f2937;
   --input-button-hover-text: #ffffff;
+  --input-audio-recording-color: #e53935;
 
   --input-text: #1f2937;
   --input-welcome-text: #6b7280;
@@ -247,6 +249,13 @@
   --inline-code-border: rgba(27,31,35,0.10);
 
   --input-file-drop-dash-color: rgb(90,90,90);
+}
+
+/* Microphone button while an audio capture is in progress: red, readable on
+   both themes. !important wins over the inline color the hover handlers set on
+   the button. */
+#InputAudioButton.is-recording {
+  color: var(--input-audio-recording-color) !important;
 }
 
 /* ===================================================== */

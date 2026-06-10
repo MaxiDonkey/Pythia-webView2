@@ -435,6 +435,7 @@
     "image_creation_aborted_error": "Kein Standardmodell konfiguriert: Bilderstellung abgebrochen",
     "video_creation_aborted_error": "Kein Standardmodell konfiguriert: Videoerstellung abgebrochen",
     "audio_creation_aborted_error": "Kein Standardmodell konfiguriert: Audioerstellung abgebrochen",
+    "stt_operation_aborted_error": "Kein Standardmodell konfiguriert: STT-Vorgang abgebrochen",
     "tts_operation_aborted_error": "Kein Standardmodell konfiguriert: TTS-Vorgang abgebrochen",
     "deep_research_operation_aborted_error": "Kein Standardmodell konfiguriert: Tiefenrecherche abgebrochen",
     "missing_default_models_error": "Fehlende Standardmodelle für einige Kategorien. #10 Überprüfen Sie die Modelleinstellungen",

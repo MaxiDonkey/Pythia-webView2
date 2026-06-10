@@ -32,6 +32,15 @@ type
     function StructuredOutputIsValid(const Payload: string): Boolean;
 
     function Normalize(const Payload: string): string;
+    procedure AddPromptFragmentConsumedPath(
+      var APaths: TArray<string>;
+      const APath: string);
+    function PromptFragmentPathWasConsumed(
+      const APaths: TArray<string>;
+      const APath: string): Boolean;
+    function ExpandPromptFragments(const APayload: string;
+      out AExpandedPayload: string;
+      out AConsumedPaths: TArray<string>): Boolean;
 
     function TryDeserializeInputState(const APayload: string; out State: TInputPromptState): Boolean;
 
@@ -203,6 +212,7 @@ type
     function CustomEvent: Boolean;
     function FileDropInEvent: Boolean;
     function PasteFromClipboardEvent: Boolean;
+    function AudioRecordEvent: Boolean;
   end;
 
 implementation
@@ -324,7 +334,8 @@ implementation
 {$ENDREGION}
 
 uses
-  REST.Json, WVPythia.JSON.SafeWriter, WVPythia.TextFile.Helper;
+  System.IOUtils, REST.Json, WVPythia.JSON.SafeWriter, WVPythia.TextFile.Helper,
+  WVPythia.Net.MediaCodec;
 
 { TBrowserEventHandlers }
 
@@ -336,7 +347,93 @@ end;
 
 function TBrowserEventHandlers.AudioInputEvent: Boolean;
 begin
+  {--- When a vendor transcription service is registered, the microphone button
+       drives the browser-side recorder (start/stop toggle). Producing the
+       capture is vendor-agnostic, so the toggle lives here in Pythia. Without
+       such a service, fall back to the legacy managed-item routing. }
+  if Assigned(FBrowser) and Assigned(FBrowser.AudioTranscriptionService) then
+    begin
+      {--- Lock the send button while a capture is in progress so the user
+           cannot start a flow during recording. It is restored in
+           AudioRecordEvent once the recording ends (success or failure). }
+      FBrowser.SetSendButtonAvailability(False);
+      FBrowser.AudioRecordingSwitch;
+      Exit(True);
+    end;
+
   Result := ActivateManagedItemEvent(TAdapterManagedItemKind.AudioInput);
+end;
+
+function TBrowserEventHandlers.AudioRecordEvent: Boolean;
+begin
+  Result := False;
+
+  {--- The send button stays locked (from AudioInputEvent) until the capture is
+       fully resolved. It is handed to the async transcription on the happy
+       path; for every other (synchronous) outcome the finally block below
+       restores it immediately. }
+  var HandedToTranscription := False;
+
+  try
+    if not FReader.IsStringNode(PROP_DATA) then
+      Exit;
+
+    var Base64 := FReader.AsString(PROP_DATA);
+    if Base64.Trim.IsEmpty then
+      begin
+        {--- The browser reports a capture failure (e.g. getUserMedia blocked or
+             unavailable) through the optional "error" field. Surface it so the
+             cause is visible instead of failing silently. }
+        if FReader.IsStringNode(PROP_ERROR) then
+          FBrowser.DisplayError(
+            Format('Audio recording failed: %s', [FReader.AsString(PROP_ERROR)]));
+        Exit;
+      end;
+
+    {--- Persist the browser-captured audio to a temporary file named after a
+         fresh CLSID. The container (webm/opus) is both playable by the display
+         layer and accepted by the OpenAI transcription endpoint. }
+    var FileName :=
+      TPath.Combine(
+        TPath.GetTempPath,
+        TGUID.NewGuid.ToString.Trim(['{', '}']) + '.webm');
+
+    if not TMediaCodec.TryDecodeBase64ToFile(Base64, FileName) then
+      Exit;
+
+    Result := True;
+
+    {--- The capture file is vendor-agnostic: hand it to the registered
+         transcription service (if any) and let Pythia place the recognized text
+         into the input bubble. Pythia never knows which vendor performs the
+         speech-to-text step. }
+    var Service := FBrowser.AudioTranscriptionService;
+    if not Assigned(Service) then
+      Exit;
+
+    HandedToTranscription := True;
+
+    Service.SubmitForTranscription(FileName,
+      procedure(AResult: TAudioTranscriptionResult)
+      begin
+        {--- Belt-and-suspenders: whatever the transcription outcome (success,
+             error, or an exception while inserting), the send button MUST be
+             restored exactly once here, since the synchronous path delegated
+             that responsibility to this callback. }
+        try
+          if AResult.Success and not AResult.Text.Trim.IsEmpty then
+            FBrowser.BubbleInputInsertText(AResult.Text);
+        finally
+          FBrowser.RecomputeSendButtonAvailability;
+        end;
+      end);
+  finally
+    {--- No async transcription was started (capture failed, no service, etc.):
+         the recording is fully over, so restore the send button now. When the
+         capture was handed off, the completion callback owns the restore. }
+    if not HandedToTranscription then
+      FBrowser.RecomputeSendButtonAvailability;
+  end;
 end;
 
 function TBrowserEventHandlers.ActivateManagedItemEvent(
@@ -445,15 +542,26 @@ end;
 
 function TBrowserEventHandlers.FileDropInEvent: Boolean;
 begin
+  if not Assigned(FBrowser) then
+    Exit(False);
+
   var Files := FReader.ArrayStrings('filenames');
   if Length(Files) = 0 then
     Exit(False);
+
+  FBrowser.BringHostToFront;
 
   var Target := TOpenFileTarget.Documents;
   if FReader.IsStringNode(PROP_TARGET) then
     Target := TOpenFileTarget.Parse(FReader.AsString(PROP_TARGET));
 
   Result := AttachFilesToInput(Files, Target);
+
+  if Result then
+    begin
+      FBrowser.BringHostToFront;
+      FBrowser.SetFocus;
+    end;
 end;
 
 function TBrowserEventHandlers.FileRemovedEvent: Boolean;
@@ -679,9 +787,6 @@ begin
   if not Clipboard.TryGetText(TextData) then
     Exit;
 
-  if TextData.Kind = ctkTempFile then
-    Exit(AttachFilesToInput([TextData.FileName], TOpenFileTarget.Documents));
-
   var Prompt := FReader.AsString('prompt');
   var SelectionStart := FReader.AsInteger('selectionStart', 0);
   var SelectionEnd := FReader.AsInteger('selectionEnd', SelectionStart);
@@ -695,6 +800,20 @@ begin
       var Swap := SelectionStart;
       SelectionStart := SelectionEnd;
       SelectionEnd := Swap;
+    end;
+
+  if TextData.Kind = ctkTempFile then
+    begin
+      if not AttachFilesToInput([TextData.FileName], TOpenFileTarget.Documents) then
+        Exit(False);
+
+      Exit(FBrowser.ExecuteScript(
+        Format(PASTE_FRAGMENT_SELECTION_TEMPLATE, [
+          TEscapeHelper.EscapeJSString(TextData.FileName),
+          SelectionStart,
+          SelectionEnd
+        ])
+      ));
     end;
 
   var UpdatedPrompt :=
@@ -830,7 +949,9 @@ begin
   Result.Index := FBrowser.PromptCount + 1;
   Result.Prompt := State.Text;
   Result.PromptImages := State.ToImageSources(State.Images);
-  Result.PromptFiles := State.ToFilePaths(State.Files);
+  Result.PromptFiles :=
+    State.ToFilePaths(State.Files) +
+    State.ToFilePaths(State.Media.SpeechToText);
   Result.PromptKnowledgeSearch := State.ToFilePaths(State.KnowledgeSearch);
 
   {--- Persist the new prompt first, then ensure the session is visible in the browser UI. }
@@ -884,17 +1005,142 @@ begin
      not FileExists(FBrowser.GetModelCategoriesFileName) then
     Exit(Payload);
 
-  {--- R�cup�rer le contenu du JSON }
+  {--- Retrieve the JSON content }
   var ParamsPayload := TFileIOHelper.LoadFromFile(FBrowser.GetModelCategoriesFileName);
   var Writer := TJsonWriter.Parse(Payload);
 
   if not Writer.IsValid then
     Exit(Payload);
 
-  {--- Ajouter le JSON des models dans le JSON courant }
+  {--- Add the JSON models to the current JSON }
   Writer.SetObjectJson('models', ParamsPayload);
   Writer.Remove('requestParams.appSettings.availableLanguages');
   Result := Writer.ToJSON;
+end;
+
+procedure TOrchestratorEventHandler.AddPromptFragmentConsumedPath(
+  var APaths: TArray<string>; const APath: string);
+begin
+  for var Existing in APaths do
+    if SameText(Existing, APath) then
+      Exit;
+
+  APaths := APaths + [APath];
+end;
+
+function TOrchestratorEventHandler.PromptFragmentPathWasConsumed(
+  const APaths: TArray<string>; const APath: string): Boolean;
+begin
+  Result := False;
+
+  for var Existing in APaths do
+    if SameText(Existing, APath) then
+      Exit(True);
+end;
+
+function TOrchestratorEventHandler.ExpandPromptFragments(
+  const APayload: string; out AExpandedPayload: string;
+  out AConsumedPaths: TArray<string>): Boolean;
+var
+  ConsumedPaths: TArray<string>;
+begin
+  {--- promptFragments is an optional browser-side overlay. Keep the original
+       payload when the node is absent so the historical input flow is
+       preserved. }
+  AExpandedPayload := APayload;
+  SetLength(AConsumedPaths, 0);
+  Result := True;
+
+  {--- Read the submitted browser state through the safe reader. Invalid JSON is
+       left untouched and will be rejected by the normal validation pipeline. }
+  var Reader := TJsonReader.Parse(APayload);
+  if not Reader.IsValid then
+    Exit;
+
+  {--- No prompt fragment metadata means there is nothing to materialize. }
+  if not Reader.IsArrayNode(PROP_PROMPT_FRAGMENTS) then
+    Exit;
+
+  var FragmentCount := Reader.Count(PROP_PROMPT_FRAGMENTS);
+  if FragmentCount = 0 then
+    Exit;
+
+  {--- Replace each live placeholder by the content of its temporary text file.
+       If the user removed a placeholder from the textarea, the file remains a
+       regular attachment and is not consumed. }
+  var PromptText := Reader.AsString(PROP_TEXT);
+
+  for var index := 0 to FragmentCount - 1 do
+    begin
+      var FragmentPath := Format('%s[%d]', [PROP_PROMPT_FRAGMENTS, index]);
+      var Placeholder := Reader.AsString(FragmentPath + '.' + PROP_PLACEHOLDER);
+      var FullPath := Reader.AsString(FragmentPath + '.' + PROP_FULLPATH);
+
+      if Placeholder.Trim.IsEmpty or FullPath.Trim.IsEmpty then
+        begin
+          FBrowser.DisplayError('Invalid prompt fragment metadata.');
+          Exit(False);
+        end;
+
+      if Pos(Placeholder, PromptText) = 0 then
+        Continue;
+
+      if not FileExists(FullPath) then
+        begin
+          FBrowser.DisplayError(Format('Prompt fragment file not found: %s', [FullPath]));
+          Exit(False);
+        end;
+
+      try
+        var Content := TFileIOHelper.LoadFromFile(FullPath);
+        PromptText := StringReplace(PromptText, Placeholder, Content, [rfReplaceAll]);
+        AddPromptFragmentConsumedPath(ConsumedPaths, FullPath);
+      except
+        on E: Exception do
+          begin
+            FBrowser.DisplayError(E.Message);
+            Exit(False);
+          end;
+      end;
+    end;
+
+  {--- Rewrite the state with the materialized prompt. TInputPromptState stays
+       unchanged because the overlay is resolved before deserialization. }
+  var Writer := TJsonWriter.Parse(APayload);
+  if not Writer.IsValid then
+    Exit(False);
+
+  if not Writer.SetString(PROP_TEXT, PromptText) then
+    Exit(False);
+
+  {--- Files consumed as prompt fragments must not be sent to the vendor as
+       regular attachments, otherwise the same content would be duplicated. }
+  if Length(ConsumedPaths) > 0 then
+    begin
+      var FilesWriter := TJsonWriter.NewArray;
+      var FileCount := Reader.Count(PROP_FILES);
+
+      for var index := 0 to FileCount - 1 do
+        begin
+          var FilePath := Format('%s[%d]', [PROP_FILES, index]);
+          var FullPath := Reader.AsString(FilePath + '.' + PROP_FULLPATH);
+
+          if PromptFragmentPathWasConsumed(ConsumedPaths, FullPath) then
+            Continue;
+
+          if not FilesWriter.AppendObjectJson('', Reader.ObjectText(FilePath)) then
+            Exit(False);
+        end;
+
+      if not Writer.SetArrayJson(PROP_FILES, FilesWriter.ToJson) then
+        Exit(False);
+    end;
+
+  {--- promptFragments is a transport instruction only. Persist and deserialize
+       the normalized state without this transient node. }
+  Writer.Remove(PROP_PROMPT_FRAGMENTS);
+  AExpandedPayload := Writer.ToJson;
+  AConsumedPaths := ConsumedPaths;
 end;
 
 function TOrchestratorEventHandler.StructuredOutputIsValid(
@@ -1005,6 +1251,11 @@ end;
 procedure TOrchestratorEventHandler.UpdateMessageUI(
   const State: TManagedItemLLMResult);
 begin
+  if (Length(State.DisplayBlocks) = 0) and
+     (not State.TextResponse.Trim.IsEmpty or
+      not State.TextReasoning.Trim.IsEmpty) then
+    FBrowser.Display(State.TextResponse, State.TextReasoning, False);
+
   FBrowser.DisplayMedia(dkImages, State.ImageList, False);
   FBrowser.DisplayMedia(dkFile, State.FileList, False);
   FBrowser.DisplayMedia(dkVideo, State.VideoList, False);
@@ -1025,10 +1276,11 @@ procedure TOrchestratorEventHandler.UpdatePromptUI(
 begin
   FBrowser.PromptMedia(dkImages, State.ToImageSources(State.Images), False);
 
-  {--- Merge regular file attachments and knowledge search references
-       before replaying them into the prompt UI. }
+  {--- Merge regular file attachments, speech-to-text audio files, and
+       knowledge search references before replaying them into the prompt UI. }
   var Files :=
     State.ToFilePaths(State.Files) +
+    State.ToFilePaths(State.Media.SpeechToText) +
     State.ToFilePaths(State.KnowledgeSearch);
 
   FBrowser.PromptMedia(dkFile, Files, False);
@@ -1040,8 +1292,13 @@ function TOrchestratorEventHandler.ValidateAggregatedPrompt(
   out Payload: string): Boolean;
 var
   ErrorMessage: string;
+  ExpandedPayload: string;
+  ConsumedFragmentPaths: TArray<string>;
 begin
-  var CommandReader := TJsonReader.Parse(APayload);
+  if not ExpandPromptFragments(APayload, ExpandedPayload, ConsumedFragmentPaths) then
+    Exit(False);
+
+  var CommandReader := TJsonReader.Parse(ExpandedPayload);
   if CommandReader.IsValid then
     begin
       var Command := CommandReader.AsString('text');
@@ -1058,7 +1315,7 @@ begin
 
   {--- Normalize the browser payload by injecting the model selection expected
        by the orchestrator/session layer. }
-  Payload := Normalize(APayload);
+  Payload := Normalize(ExpandedPayload);
 
   {--- Reject the submission while the browser is already processing a prompt
        or when the dialog service cannot accept managed execution. }
@@ -1097,6 +1354,12 @@ begin
 
   {--- Lock the browser interaction surface for the whole managed prompt lifecycle. }
   FBrowser.Locked := True;
+
+  if Assigned(FBrowser.FileUploadService) then
+    begin
+      for var Path in ConsumedFragmentPaths do
+        FBrowser.FileUploadService.CancelOrDelete(Path);
+    end;
 
   Result := True;
 end;
@@ -1159,10 +1422,17 @@ begin
       Exit(False);
     end;
 
-  if (Length(State.Media.SpeechToText) > 0) and
+  if State.Media.TextToSpeech and
      State.Models.Categories[TEXT_TO_SPEECH_INDEX].Model.IsEmpty then
     begin
       ErrorMessage := S_TTS_OPERATION_ABORTED_ERROR;
+      Exit(False);
+    end;
+
+  if (Length(State.Media.SpeechToText) > 0) and
+     State.Models.Categories[SPEECH_TO_TEXT_INDEX].Model.IsEmpty then
+    begin
+      ErrorMessage := S_STT_OPERATION_ABORTED_ERROR;
       Exit(False);
     end;
 
@@ -1274,6 +1544,9 @@ begin
 
       Result := True;
     end;
+
+  if Result and (ATarget = TOpenFileTarget.Speech) then
+    FBrowser.BubbleInputSetText('[Transcription]');
 end;
 
 function TDialogConfirmationEventHandler.ConfirmationResponse: Boolean;
@@ -1497,6 +1770,10 @@ begin
 
   {--- Reset the current browser view before starting a fresh conversation. }
   FBrowser.Clear;
+
+  var NewChatRequested := FBrowser.OnNewChatRequested;
+  if Assigned(NewChatRequested) then
+    NewChatRequested();
 
   FBrowser.SetFocus;
 

@@ -198,6 +198,44 @@ type
       read GetOnPendingChanged write SetOnPendingChanged;
   end;
 
+  {--- Outcome of a single audio transcription attempt, surfaced to Pythia
+       through TAudioTranscriptionCompleteProc once an
+       IAudioTranscriptionService implementation finishes processing a capture
+       file. Pythia owns the capture (vendor-agnostic); the result only carries
+       the recognized text or an error. }
+  TAudioTranscriptionResult = record
+    Success: Boolean;
+    Text: string;
+    ErrorMessage: string;
+    class function Ok(const AText: string): TAudioTranscriptionResult; static;
+    class function Fail(const AErrorMessage: string): TAudioTranscriptionResult; static;
+  end;
+
+  TAudioTranscriptionCompleteProc = TProc<TAudioTranscriptionResult>;
+
+  {--- Optional vendor-provided service used by Pythia to turn a browser-side
+       audio capture file into text. The microphone capture, the temporary
+       file production and the placement of the resulting text in the input
+       bubble are all handled by Pythia and remain vendor-neutral; the vendor
+       only implements the speech-to-text step.
+
+       Lifecycle contract:
+       • SubmitForTranscription is called by Pythia on the UI thread once a
+         capture file is ready on disk (see AudioRecordEvent). It returns
+         immediately; the actual transcription may run asynchronously.
+       • AOnComplete is invoked exactly once, on the UI thread, with the
+         recognized text (Success) or an error (Fail). It may be nil when the
+         host does not need the result.
+       • Implementations must tolerate being called for a path they cannot
+         process and must report it through TAudioTranscriptionResult.Fail
+         rather than raising. }
+  IAudioTranscriptionService = interface
+    ['{7C1F3A92-6B4D-4E18-9A2C-3D5E8F0B1A74}']
+    procedure SubmitForTranscription(
+      const AAudioFilePath: string;
+      const AOnComplete: TAudioTranscriptionCompleteProc = nil);
+  end;
+
   {--- Vendor-neutral snapshot of streamed display blocks. Implementations can
        keep their own live aggregation strategy, but must expose cloned Pythia
        blocks for persistence/replay at turn finalization time. }
@@ -257,6 +295,9 @@ type
     function GetOnAfterSessionReloaded: TProc<string>;
     procedure SetOnAfterSessionReloaded(const Value: TProc<string>);
 
+    function GetOnNewChatRequested: TProc;
+    procedure SetOnNewChatRequested(const Value: TProc);
+
     function GetPersistentChat: IPersistentChat;
     procedure SetPersistentChat(const Value: IPersistentChat);
     function GetApiKeySecretStore: ISecretStore;
@@ -269,6 +310,8 @@ type
     procedure SetFileUploadService(const Value: IFileUploadService);
     function GetKnowledgeIndexingService: IKnowledgeIndexingService;
     procedure SetKnowledgeIndexingService(const Value: IKnowledgeIndexingService);
+    function GetAudioTranscriptionService: IAudioTranscriptionService;
+    procedure SetAudioTranscriptionService(const Value: IAudioTranscriptionService);
 
     //accessible uniquement avec via l'interface
     function ExecuteScript(const Script: string): Boolean;
@@ -302,6 +345,7 @@ type
     function BubbleInputFunctionButtonVisible(const Value: Boolean = True): Boolean;
     function BubbleInputClear: Boolean;
     function BubbleInputSetText(const Value: string): Boolean;
+    function BubbleInputInsertText(const Value: string): Boolean;
     function BubbleInputWelcome(const Value: string): Boolean;
 
     function ReasoningCollapse: Boolean;
@@ -343,6 +387,9 @@ type
 
     procedure SetLanguage(const Value: string);
     procedure StopMedia;
+    procedure AudioRecordingStart;
+    procedure AudioRecordingStop;
+    procedure AudioRecordingSwitch;
     function DisplayChatSession: Boolean;
     function UpdateFileDrawer: Boolean;
 
@@ -407,6 +454,7 @@ type
     procedure Clear;
     procedure BeginUpdate;
     procedure EndUpdate;
+    procedure BringHostToFront;
     procedure SetFocus;
 
     function Prompt(const AText: string): Boolean;
@@ -560,6 +608,7 @@ type
     property EnabledButtons: TEnabledButtons read GetEnabledButtons write SetEnabledButtons;
     property OnChatSessionAutoRename: TProc<string, string> read GetOnChatSessionAutoRename write SetOnChatSessionAutoRename;
     property OnAfterSessionReloaded: TProc<string> read GetOnAfterSessionReloaded write SetOnAfterSessionReloaded;
+    property OnNewChatRequested: TProc read GetOnNewChatRequested write SetOnNewChatRequested;
     property PersistentChat: IPersistentChat read GetPersistentChat write SetPersistentChat;
     property ApiKeySecretStore: ISecretStore read GetApiKeySecretStore write SetApiKeySecretStore;
     property CommandLine: ICommandRegistry read GetCommandLine write SetCommandLine;
@@ -567,6 +616,8 @@ type
     property FileUploadService: IFileUploadService read GetFileUploadService write SetFileUploadService;
     property KnowledgeIndexingService: IKnowledgeIndexingService
       read GetKnowledgeIndexingService write SetKnowledgeIndexingService;
+    property AudioTranscriptionService: IAudioTranscriptionService
+      read GetAudioTranscriptionService write SetAudioTranscriptionService;
   end;
 
 implementation
@@ -600,6 +651,24 @@ begin
   Result.LocalPath := ALocalPath;
   Result.Success := False;
   Result.FileId := '';
+  Result.ErrorMessage := AErrorMessage;
+end;
+
+{ TAudioTranscriptionResult }
+
+class function TAudioTranscriptionResult.Ok(
+  const AText: string): TAudioTranscriptionResult;
+begin
+  Result.Success := True;
+  Result.Text := AText;
+  Result.ErrorMessage := '';
+end;
+
+class function TAudioTranscriptionResult.Fail(
+  const AErrorMessage: string): TAudioTranscriptionResult;
+begin
+  Result.Success := False;
+  Result.Text := '';
   Result.ErrorMessage := AErrorMessage;
 end;
 

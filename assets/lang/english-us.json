@@ -435,6 +435,7 @@
     "image_creation_aborted_error": "No default model configured: Image creation aborted",
     "video_creation_aborted_error": "No default model configured: Video creation aborted",
     "audio_creation_aborted_error": "No default model configured: Audio creation aborted",
+    "stt_operation_aborted_error": "No default model configured: STT operation aborted",
     "tts_operation_aborted_error": "No default model configured: TTS operation aborted",
     "deep_research_operation_aborted_error": "No default model configured: Deep Reasearch operation aborted",
     "missing_default_models_error": "Missing default models for some categories. #10 Check Model Settings",

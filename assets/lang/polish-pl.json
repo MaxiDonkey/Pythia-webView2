@@ -435,6 +435,7 @@
     "image_creation_aborted_error": "Nie skonfigurowano modelu domyślnego: tworzenie obrazu przerwane",
     "video_creation_aborted_error": "Nie skonfigurowano modelu domyślnego: tworzenie wideo przerwane",
     "audio_creation_aborted_error": "Nie skonfigurowano modelu domyślnego: tworzenie audio przerwane",
+    "stt_operation_aborted_error": "Nie skonfigurowano modelu domyślnego: operacja STT przerwana",
     "tts_operation_aborted_error": "Nie skonfigurowano modelu domyślnego: operacja TTS przerwana",
     "deep_research_operation_aborted_error": "Nie skonfigurowano modelu domyślnego: dogłębne badanie przerwane",
     "missing_default_models_error": "Brakujące modele domyślne dla niektórych kategorii. #10 Sprawdź ustawienia modeli",

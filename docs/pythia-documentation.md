@@ -21,26 +21,27 @@
    - [14 Card system — function, MCP, skill, agent, custom](#14-card-system--function-mcp-skill-agent-custom)
    - [15 Model selector](#15-model-selector)
    - [16 Implementing a vendor service (`IVendorServices`)](#16-implementing-a-vendor-service-ivendorservices)
-   - [17 Media output — image, audio, video, TTS](#17-media-output--image-audio-video-tts)
-   - [18 Audio input (transcription)](#18-audio-input-transcription)
-   - [19 File attachments & file drawer](#19-file-attachments--file-drawer)
-   - [20 Themes & Look & Feel](#20-themes--look--feel)
-   - [21 Two-step confirmation](#21-two-step-confirmation)
-   - [22 Chat sessions, persistence, pagination](#22-chat-sessions-persistence-pagination)
-   - [23 Plugin UI and JS ↔ Delphi bridge](#23-plugin-ui-and-js--delphi-bridge)
-   - [24 Internationalization](#24-internationalization)
-   - [25 JSON configuration files](#25-json-configuration-files)
+   - [17 Vendor async services (upload, indexing, transcription)](#17-vendor-async-services-upload-indexing-transcription)
+   - [18 Media output — image, audio, video, TTS](#18-media-output--image-audio-video-tts)
+   - [19 Audio input (transcription)](#19-audio-input-transcription)
+   - [20 File attachments & file drawer](#20-file-attachments--file-drawer)
+   - [21 Themes & Look & Feel](#21-themes--look--feel)
+   - [22 Two-step confirmation](#22-two-step-confirmation)
+   - [23 Chat sessions, persistence, pagination](#23-chat-sessions-persistence-pagination)
+   - [24 Plugin UI and JS ↔ Delphi bridge](#24-plugin-ui-and-js--delphi-bridge)
+   - [25 Internationalization](#25-internationalization)
+   - [26 JSON configuration files](#26-json-configuration-files)
 
 [Part III — Reference](#part-iii--reference)
-   - [26 API surface — key interfaces](#26-api-surface--key-interfaces)
-   - [27 `TBrowserChatEvent` event table](#27-tbrowserchatevent-event-table)
-   - [28 FMX ↔ VCL matrix](#28-fmx--vcl-matrix)
-   - [29 JS template catalog](#29-js-template-catalog)
-   - [30 Developer mode & diagnostics](#30-developer-mode--diagnostics)
-   - [31 Deployment](#31-deployment)
-   - [32 Glossary](#32-glossary)
-   - [33 Security & limits](#33-security--limits)
-   - [34 FAQ / pitfalls](#34-faq--pitfalls)
+   - [27 API surface — key interfaces](#27-api-surface--key-interfaces)
+   - [28 `TBrowserChatEvent` event table](#28-tbrowserchatevent-event-table)
+   - [29 FMX ↔ VCL matrix](#29-fmx--vcl-matrix)
+   - [30 JS template catalog](#30-js-template-catalog)
+   - [31 Developer mode & diagnostics](#31-developer-mode--diagnostics)
+   - [32 Deployment](#32-deployment)
+   - [33 Glossary](#33-glossary)
+   - [34 Security & limits](#34-security--limits)
+   - [35 FAQ / pitfalls](#35-faq--pitfalls)
 
 ___
 
@@ -90,7 +91,7 @@ Pythia-Webview2 is organized around a clear boundary between WebView2 rendering 
 | Layer | Components |
 |---|---|
 | UI framework | `FMX.WVPythia.Chat` | `VCL.WVPythia.Chat`<br>FMX/VCL specific, symmetric |
-| WebView2 host + JS templates | `uWVFMX*`, `WebView4Delphi`, WebView2 runtime<br>`assets/scripts/*.js` — 22 templates |
+| WebView2 host + JS templates | `uWVFMX*`, `WebView4Delphi`, WebView2 runtime<br>`assets/scripts/*.js` — 24 templates |
 | Event routing | `WVPythia.Chat.EventManager` — dispatch<br>`WVPythia.Chat.EventHandlers` — execution |
 | Neutral contracts | `WVPythia.Adapter`<br>`WVPythia.ManagedItemService`<br>`WVPythia.Chat.Interfaces` |
 | Command layer | Parser → Registry → Plugin (+ApiKey) |
@@ -534,7 +535,7 @@ begin
       {--- Called after every dictionary reload, right after the
            native S_… strings of WVPythia.Strs have been retranslated
            (WVPythia.Strs.pas). This is where the host application's
-           custom-string retranslation belongs (see §24 — custom
+           custom-string retranslation belongs (see §25 — custom
            section of the language JSON). }
     end;
 
@@ -571,6 +572,28 @@ begin
            Value2 = textual content to use as a naming reference
            Call the LLM to generate a short title, then persist it
            via Pythia.SessionAutoRename(Value1, NewTitle). }
+    end;
+
+  Pythia.OnAfterSessionReloaded :=
+    procedure (Value: string)
+    begin
+      {--- Called after a previously persisted chat session has been
+           re-displayed in the browser (VCL.WVPythia.Chat.pas).
+           Value = active chat ID.
+           Use this hook to restore any session-derived host UI state
+           that is not rebuilt by the standard rendering pipeline — for
+           example a managed-agent chip, a project badge, or toolbar
+           state tied to the reloaded conversation. }
+    end;
+
+  Pythia.OnNewChatRequested :=
+    procedure
+    begin
+      {--- Called when the user requests a new blank chat from the
+           browser UI (VCL.WVPythia.Chat.pas).
+           Reset here any host-side state associated with the previous
+           conversation before the fresh session starts: cached context,
+           per-session services, transient UI. }
     end;
 
   Pythia.OnRegisterCommandPlugins :=
@@ -687,7 +710,7 @@ begin
       {--- Called after every dictionary reload, right after the
            native S_… strings of WVPythia.Strs have been retranslated.
            This is where the host application's custom-string
-           retranslation belongs (see §24 — custom section of the
+           retranslation belongs (see §25 — custom section of the
            language JSON). }
     end;
 
@@ -721,6 +744,28 @@ begin
            Value2 = textual content to use as a naming reference
            Call the LLM to generate a short title, then persist it
            via Pythia.SessionAutoRename(Value1, NewTitle). }
+    end;
+
+  Pythia.OnAfterSessionReloaded :=
+    procedure (Value: string)
+    begin
+      {--- Called after a previously persisted chat session has been
+           re-displayed in the browser (FMX.WVPythia.Chat.pas).
+           Value = active chat ID.
+           Use this hook to restore any session-derived host UI state
+           that is not rebuilt by the standard rendering pipeline — for
+           example a managed-agent chip, a project badge, or toolbar
+           state tied to the reloaded conversation. }
+    end;
+
+  Pythia.OnNewChatRequested :=
+    procedure
+    begin
+      {--- Called when the user requests a new blank chat from the
+           browser UI (FMX.WVPythia.Chat.pas).
+           Reset here any host-side state associated with the previous
+           conversation before the fresh session starts: cached context,
+           per-session services, transient UI. }
     end;
 
   Pythia.OnRegisterCommandPlugins :=
@@ -787,6 +832,8 @@ end;
 | `OnRenderChatContent` | Lifecycle | `TFunc<Boolean>` | Lets the host intercept chat-content rendering. |
 | `OnApiKeyChanged` | Lifecycle | `TProc<string>` | Notifies key creation, modification, or deletion. |
 | `OnChatSessionAutoRename` | Lifecycle | `TProc<string,string>` | Requests a generated title for a session. |
+| `OnAfterSessionReloaded` | Lifecycle | `TProc<string>` | Fires after a persisted session is re-displayed, carrying the active chat ID; restore session-derived host UI here. |
+| `OnNewChatRequested` | Lifecycle | `TProc` | Fires when the user requests a new blank chat from the browser UI. |
 | `OnRegisterCommandPlugins` | Lifecycle | `TProc` | Registers business slash-command plugins. |
 | `ApiKeySecretStore` | Application boundary | `ISecretStore` | Reads, writes, and deletes API key values. |
 | `OnInitialized` | Lifecycle | `TProc` | Runs after the complete chat runtime initialization; safe hook for actions requiring the WebView2 chat UI, bridge, templates, capabilities/settings/models, buttons, and input surface to be ready. |
@@ -1376,12 +1423,12 @@ When user input is not a command, that is `csNotACommand`, the framework falls b
 
 ### Introduction
 
-The chat interface is not a monolithic rendering: it is composed from **one root HTML file and 22 JavaScript files** injected into WebView2. Loading is driven by `ITemplateProvider` (`WVPythia.Template.Manager.pas`).
+The chat interface is not a monolithic rendering: it is composed from **one root HTML file and 24 JavaScript files** injected into WebView2. Loading is driven by `ITemplateProvider` (`WVPythia.Template.Manager.pas`).
 
 <br>
 
 - [Locations](#locations)
-- [TTemplateType enumeration (23 entries)](#ttemplatetype-enumeration-23-entries)
+- [TTemplateType enumeration (25 entries)](#ttemplatetype-enumeration-25-entries)
 - [Two loading strategies](#two-loading-strategies)
 - [Replacing a template without recompiling](#replacing-a-template-without-recompiling)
 - [Conventions observed in the shipped templates](#conventions-observed-in-the-shipped-templates)
@@ -1392,10 +1439,10 @@ The chat interface is not a monolithic rendering: it is composed from **one root
 
 ```
 assets/index.htm              ← HTML skeleton (main_html)
-assets/scripts/*.js           ← 22 JS templates (PromptTemplate, DisplayTemplate, ...)
+assets/scripts/*.js           ← 24 JS templates (PromptTemplate, DisplayTemplate, ...)
 ```
 
-### `TTemplateType` enumeration (23 entries)
+### `TTemplateType` enumeration (25 entries)
 
 Defined in `WVPythia.Template.Manager.pas`. Each value is mapped to a file via `FileNames` (`WVPythia.Template.Manager.pas`).
 
@@ -1422,7 +1469,7 @@ Provider.LoadCustomTemplate('scripts\MyPromptTemplate.js');
 
 The shipped templates are simple JavaScript fragments loaded into the same WebView context. They must therefore stay self-contained, limit global exports, and only publish on `window` the APIs that are deliberately shared. The framework does not validate their internal structure; it only observes the messages sent to the WebView2 bridge.
 
-The following patterns are **observed** in the 22 shipped templates, not enforced by the framework:
+The following patterns are **observed** in the 24 shipped templates, not enforced by the framework:
 
 - IIFE `(() => { ... })();` to encapsulate local state.
 - Internationalization via `window.AppI18n.t('key')` — exposed by `BootstrapDictionaryTemplate.js`.
@@ -1540,6 +1587,7 @@ Capabilities are declared in the `TFunctionsType` enum and grouped into coherent
 | `Media*` | Image, audio, video, speech-to-text, and text-to-speech surfaces. |
 | `WebSearch` and `DeepResearch` | Research-oriented tools. |
 | `Model` | Model selector visibility. |
+| `Project` | Project folder surface: lets the user register one or more folders where projects are installed and pick one as the default project for the session. |
 | `Custom` and `SystemPrompt` | Application-specific and prompt-parameter surfaces. |
 
 ### Configuration via the builder
@@ -1557,6 +1605,7 @@ Pythia.Capabilities
   .Media(False)
   .DeepResearch(False)
   .Model(True)
+  .Project(True)
   .Update;
 ```
 
@@ -1578,7 +1627,8 @@ The capabilities JSON file is deliberately flat and readable:
   "deepResearch": false,
   "integration": true,
   "integrationFunction": true,
-  "model": true
+  "model": true,
+  "project": true
 }
 ```
 
@@ -1738,37 +1788,61 @@ Example:
   "type": "model-selector-set-data",
   "models": [
     {
-      "id": "anthropic-sonnet-example",
-      "label": "Claude Sonnet",
+      "id": "text-generation-example",
+      "label": "One of text generation model",
       "capabilityLabels": ["Thinking", "Vision"],
       "categoryId": "textGeneration"
     },
     {
-      "id": "image-model-example",
-      "label": "Image Model",
-      "capabilityLabels": ["Create Image", "Vision"],
+      "id": "image-creation-example",
+      "label": "One of image creation model",
+      "capabilityLabels": ["Create Image"],
       "categoryId": "imageCreation"
     },
     {
-      "id": "deep-research-model-example",
-      "label": "Deep Research Model",
+      "id": "video-creation-example",
+      "label": "One of video creation model",
+      "capabilityLabels": ["Create Video"],
+      "categoryId": "videoCreation"
+    },
+    {
+      "id": "audio-creation-example",
+      "label": "One of audio creation model",
+      "capabilityLabels": ["Create Audio", "Text to speech"],
+      "categoryId": "audioCreation"
+    },
+    {
+      "id": "text-to-speech-example",
+      "label": "One of text to speech model",
+      "capabilityLabels": ["Text to speech"],
+      "categoryId": "textToSpeech"
+    },
+    {
+      "id": "speech-to-text-example",
+      "label": "One of speech to text model",
+      "capabilityLabels": ["Speech to text"],
+      "categoryId": "speechToText"
+    },
+    {
+      "id": "deep-research-example",
+      "label": "One of deep research model",
       "capabilityLabels": ["Deep Research"],
       "categoryId": "deepResearch"
     }
   ],
-  "activeCategoryId": "textGeneration",
-  "selectedModelId": "anthropic-sonnet-example"
+  "activeCategoryId": "allModels",
+  "selectedModelId": ""
 }
 ```
 
-Field meaning:
+This mirrors the default model list generated on first launch, which seeds one entry per category. Field meaning:
 
 | Field | Purpose |
 |---|---|
 | `id` | UI-side identifier. It can be an alias or the exact vendor model name, depending on the adapter. |
 | `label` | Human-readable label shown in the selector. |
 | `capabilityLabels` | Tags displayed under the label. |
-| `categoryId` | Category such as `textGeneration`, `imageCreation`, `videoCreation`, `audioCreation`, `textToSpeech` or `deepResearch`. |
+| `categoryId` | Category such as `textGeneration`, `imageCreation`, `videoCreation`, `audioCreation`, `textToSpeech`, `speechToText`, or `deepResearch`. |
 
 Replace example `id` values with the exact identifiers expected by your vendor implementation, or keep stable aliases and map them inside the vendor service.
 
@@ -1818,7 +1892,7 @@ Example:
         "Web research",
         "Vision"
       ],
-      "model": "anthropic-sonnet-example",
+      "model": "text-generation-example",
       "visible": true
     },
     {
@@ -1830,16 +1904,53 @@ Example:
         "Create Image",
         "Vision"
       ],
-      "model": "",
+      "model": "image-creation-example",
       "visible": true
     },
     {
       "id": "videoCreation",
       "label": "Video Creation",
-      "sourceCategoryId": "video",
+      "badge": "",
+      "sourceCategoryId": "image",
       "featureLabels": ["Create Video"],
       "model": "",
       "visible": false
+    },
+    {
+      "id": "audioCreation",
+      "label": "Audio creation",
+      "badge": "",
+      "sourceCategoryId": "audio",
+      "featureLabels": ["Create Audio"],
+      "model": "audio-creation-example",
+      "visible": false
+    },
+    {
+      "id": "textToSpeech",
+      "label": "Text to speech",
+      "badge": "",
+      "sourceCategoryId": "audio",
+      "featureLabels": ["Text to speech"],
+      "model": "text-to-speech-example",
+      "visible": true
+    },
+    {
+      "id": "speechToText",
+      "label": "Speech to text",
+      "badge": "",
+      "sourceCategoryId": "audio",
+      "featureLabels": ["Speech to text"],
+      "model": "speech-to-text-example",
+      "visible": true
+    },
+    {
+      "id": "deepResearch",
+      "label": "Deep Research",
+      "badge": "",
+      "sourceCategoryId": "deepResearch",
+      "featureLabels": ["Deep Research"],
+      "model": "deep-research-example",
+      "visible": true
     }
   ],
   "type": "model-selector-set-runtime-config"
@@ -1849,7 +1960,7 @@ Example:
 The important field is:
 
 ```json
-"model": "anthropic-sonnet-example"
+"model": "text-generation-example"
 ```
 
 The value must match the `id` of a model declared in `<ExeName>-model-list.json`.
@@ -1877,6 +1988,7 @@ No default model configured: Image creation aborted
 No default model configured: Video creation aborted
 No default model configured: Audio creation aborted
 No default model configured: TTS operation aborted
+No default model configured: STT operation aborted
 No default model configured: Deep Research operation aborted
 ```
 
@@ -1915,7 +2027,7 @@ it means that the category is visible, but no model is currently selected for it
 
 1. open the model configuration panel;
 2. look for categories marked as not assigned, usually with a red dot;
-3. select the relevant category, such as Text Generation, Image Creation, Video Creation, Audio Creation, Text to Speech, or Deep Research;
+3. select the relevant category, such as Text Generation, Image Creation, Video Creation, Audio Creation, Text to Speech, Speech to Text, or Deep Research;
 4. choose one of the compatible models from the filtered list;
 5. retry the operation.
 
@@ -1952,6 +2064,7 @@ LLM-related processing must be asynchronous so the UI remains responsive. Networ
 - [Vendor service skeleton](#vendor-service-skeleton)
 - [Initialize the vendor after the browser is ready](#initialize-the-vendor-after-the-browser-is-ready)
 - [Streaming and UI](#streaming-and-ui)
+- [Structured display blocks — live rendering and durable replay](#structured-display-blocks--live-rendering-and-durable-replay)
 
 <br>
 
@@ -2160,7 +2273,277 @@ User cancellation is funneled through `FBrowser.Escape: Boolean`. The vendor ser
 
 <br>
 
-## 17 Media output — image, audio, video, TTS
+### Structured display blocks — live rendering and durable replay
+
+`DisplayStream` renders a single Markdown bubble (assistant text plus an optional reasoning panel). That is enough for a plain answer, but a tool-using or agentic turn produces an **ordered sequence of heterogeneous segments** — assistant text, reasoning, tool status, tool output, tool error, sources, citations, artifacts — that must render live **and** survive a session reload. This is the role of **display blocks**.
+
+#### The block unit
+
+A block is a `TChatDisplayBlock` (`WVPythia.ChatSession.Controller.pas`) with a small, vendor-neutral shape:
+
+| Field | Purpose |
+|---|---|
+| `Kind` | The block category (see below). |
+| `Title` | Short heading — typically a tool label. |
+| `Text` | The body (Markdown / plain text). |
+| `Url` | Optional link (e.g. a source document). |
+| `Items` | Optional structured entries (e.g. a source or citation list). |
+
+The kinds are declared as `DISPLAY_BLOCK_KIND_*` constants (`WVPythia.Chat.Consts.pas`): `assistant`, `reasoning`, `status`, `toolStatus`, `toolOutput`, `toolError`, `sourceStatus`, `sourceList`, `sourceDocument`, `citationList`, `artifactList`.
+
+#### Two concerns, fed in parallel during the stream
+
+A vendor service feeds two things from the same stream callbacks:
+
+1. **Live rendering** — push each increment to the WebView through the `IPythiaBrowser` block methods so the user sees the turn build in real time:
+
+   | Method | Use |
+   |---|---|
+   | `DisplayAssistantStream(Delta)` / `DisplayReasoningStream(Delta)` | Stream assistant text / reasoning. |
+   | `DisplayToolStatus(Text)` | A tool is starting / progressing. |
+   | `DisplayToolOutput(Title, Text)` / `DisplayToolOutputStart` / `DisplayToolOutputStream(Delta)` | A tool result (full or streamed). |
+   | `DisplayToolError(Title, Text)` / `DisplayToolErrorStart` / `DisplayToolErrorStream(Delta)` | A failed tool. |
+   | `DisplayStatus`, `DisplaySourceStatus`, `DisplaySourceList`, `DisplaySourceDocument`, `DisplayCitationList`, `DisplayArtifactList` | Status and source / citation / artifact surfaces. |
+   | `DisplayBlock(Kind, PayloadJson)` / `DisplayBlockStream(Kind, Delta, PayloadJson)` | Generic escape hatch for any kind. |
+
+2. **Durable snapshot** — accumulate the same events into a block array that is persisted at the end of the turn and replayed when the session is reopened.
+
+#### The vendor-neutral aggregator
+
+The durable snapshot is built by the aggregator in `WVPythia.Chat.DisplayBlocks.pas`:
+
+- `IPythiaDisplayBlockAggregator` — the contract;
+- `TPythiaDisplayBlockAggregator` — the ready-to-use implementation.
+
+It exposes append/lifecycle operations and a clone accessor:
+
+```pascal
+procedure AppendAssistantDelta(const Delta: string);
+procedure AppendAssistantText(const Text: string);                // finalized (non-delta) assistant text
+procedure AppendReasoningDelta(const Delta: string);
+procedure AppendToolUse(const ToolUseId, Title: string);          // open a tool block
+procedure AppendToolResultDelta(const Delta: string);             // stream into the open tool block
+procedure AppendToolResult(const ToolUseId, Text: string;
+  const IsError: Boolean = False);                                // close the tool pairing
+procedure AppendStatus(const Title, Text: string);
+procedure MarkToolError(const ToolUseId: string);
+procedure CloseCurrent;
+function  CloneDisplayBlocks: TArray<TChatDisplayBlock>;          // durable snapshot
+```
+
+Its behavior is the value it adds: consecutive same-kind deltas are **merged** into a single block, and a tool-use block is **paired** with its later tool-result by `ToolUseId`, so one persisted entry carries both the tool identity and its output. When a result arrives without a prior tool-use, it falls back to a standalone output block.
+
+#### The vendor must implement the adapter
+
+Pythia stays vendor-agnostic: it does not know any provider's stream vocabulary. **Each vendor implements its own adapter** — a subclass of `TPythiaDisplayBlockAggregator` (optionally exposing an interface that descends from `IPythiaDisplayBlockAggregator`) — that translates **its own** stream events / snapshots into the neutral `Append…` / `Mark…` / `CloseCurrent` calls.
+
+Everything provider-specific — resolving a human-readable tool title, formatting detail text out of the raw provider payload, deciding when a tool input is complete — lives **inside that adapter**, never in Pythia core.
+
+```pascal
+type
+  IMyVendorDisplayBlocks = interface(IPythiaDisplayBlockAggregator)
+    ['{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}']
+    procedure RegisterToolUseStop(const AToolId, ARawInputJson: string);
+    procedure RegisterToolResultStop(const AToolId: string; const AIsError: Boolean);
+  end;
+
+  TMyVendorDisplayBlocks = class(
+    TPythiaDisplayBlockAggregator, IMyVendorDisplayBlocks)
+  public
+    procedure RegisterToolUseStop(const AToolId, ARawInputJson: string);
+    procedure RegisterToolResultStop(const AToolId: string; const AIsError: Boolean);
+  end;
+
+procedure TMyVendorDisplayBlocks.RegisterToolUseStop(
+  const AToolId, ARawInputJson: string);
+begin
+  {--- Build a readable label from the provider-specific payload
+       (kept on the vendor side), then feed the neutral aggregator. }
+  AppendToolUse(AToolId, ResolveToolTitle(ARawInputJson));
+end;
+
+procedure TMyVendorDisplayBlocks.RegisterToolResultStop(
+  const AToolId: string; const AIsError: Boolean);
+begin
+  if AIsError then
+    MarkToolError(AToolId);
+  CloseCurrent;
+end;
+```
+
+#### Wiring it inside `AsyncAwaitStreamChat`
+
+Create one aggregator at the start of the turn, then, in every stream callback, drive the live UI **and** the aggregator together. At finalization, hand the snapshot to the result via `DisplayBlockResults`:
+
+```pascal
+{--- Interface-typed so the aggregator is reference-counted and freed
+     automatically at end of scope. }
+var Blocks: IMyVendorDisplayBlocks := TMyVendorDisplayBlocks.Create;
+
+// --- during the stream ---
+//  assistant delta:  FBrowser.DisplayAssistantStream(Delta);
+//                    Blocks.AppendAssistantDelta(Delta);
+//  reasoning delta:  FBrowser.DisplayReasoningStream(Delta);
+//                    Blocks.AppendReasoningDelta(Delta);
+//  tool lifecycle:   Blocks.RegisterToolUseStop(...) / RegisterToolResultStop(...)
+
+// --- on completion ---
+var Result := TManagedItemLLMResult.New;
+var Snapshot := Blocks.CloneDisplayBlocks;   // a fresh array owned by the caller
+try
+  Result
+    .UsedModel(State.Model)
+    .Response(FinalText)
+    .DisplayBlockResults(Snapshot)   // the result stores its own clone
+    .Error(False);
+
+  if Assigned(AOnFinalize) then
+    AOnFinalize(Result);
+finally
+  FreeChatDisplayBlocks(Snapshot);   // WVPythia.ChatSession.Controller
+  Result.Free;
+end;
+```
+
+#### Persistence and replay
+
+`DisplayBlockResults` stores the blocks in the chat turn (`TChatTurn.DisplayBlocks` / `DisplayBlocksJson`, see §23). When the user reopens the conversation, Pythia replays the persisted array through `IPythiaBrowser.DisplayBlocks(BlocksJson)`, so a reloaded session shows the same structured assistant / reasoning / tool layout — not a flattened text dump. `CloneDisplayBlocks` is the snapshot contract (`IPythiaDisplayBlockSnapshot`) every aggregator exposes.
+
+> If a vendor only ever returns plain text, it can keep using `DisplayStream` + `Response(...)` and ignore display blocks entirely. Blocks become necessary as soon as a turn mixes text with tools, reasoning, sources, or citations that must persist across reloads.
+
+<br>
+
+## 17 Vendor async services (upload, indexing, transcription)
+
+- [17.1 IFileUploadService — attachment upload](#171-ifileuploadservice--attachment-upload)
+- [17.2 IKnowledgeIndexingService — knowledge indexing (RAG)](#172-iknowledgeindexingservice--knowledge-indexing-rag)
+- [17.3 IAudioTranscriptionService — microphone dictation](#173-iaudiotranscriptionservice--microphone-dictation)
+
+<br>
+
+Section 16 covered the **primary** vendor service — `IVendorServices`, which actually produces the conversation. Around it, Pythia exposes **three optional, vendor-provided auxiliary services**, injected as properties on `IPythiaBrowser`. They are deliberately kept separate from `IVendorServices`: that one drives the chat turn, while these handle **side artifacts** — file attachments and microphone dictation.
+
+All three share one philosophy and the same shape:
+
+- **Pythia owns the UI and the neutral plumbing; the vendor only implements the provider-specific remote step.**
+- They are **asynchronous** and report their outcome through a completion callback invoked **exactly once, on the UI thread**.
+- They are **optional**: leave a property `nil` and the matching feature simply stays off.
+- They are wired in one place — the `IVendorServices` constructor:
+
+```pascal
+constructor TOpenAIServices.Create(const ABrowser: IPythiaBrowser; const AContext: IContext);
+begin
+  ...
+  FBrowser.FileUploadService :=
+    TDownloadService.Create(FBrowser as IPythiaBrowser, FClient);
+
+  FBrowser.KnowledgeIndexingService :=
+    TOpenAIKnowledgeIndexingService.Create(FBrowser as IPythiaBrowser, FClient);
+
+  FBrowser.AudioTranscriptionService :=
+    TOpenAITranscriptionService.Create(FClientUtils);
+
+  //Show the record button
+  if Assigned(FBrowser.AudioTranscriptionService) then
+    FBrowser.EnabledButtons := FBrowser.EnabledButtons + [ebMicrophone];
+end;
+```
+
+> [!IMPORTANT]
+> The three contracts live in `WVPythia.Chat.Interfaces.pas`. A vendor may implement **any subset** — for example transcription only, or uploads only. None of them is required for a basic chat.
+
+### Shared coordination — the send button
+
+`IFileUploadService` and `IKnowledgeIndexingService` expose `PendingCount` and an `OnPendingChanged` callback; the transcription flow locks the bar while a capture is in progress. Whenever any of them has work in flight, the **send button must be disabled** so a turn cannot start on incomplete input. There is a single coordination entry point:
+
+```pascal
+FBrowser.SetSendButtonAvailability(False);  // orthogonal hard lock (e.g. while recording)
+FBrowser.RecomputeSendButtonAvailability;   // recompute by summing every service's PendingCount
+```
+
+Always call `RecomputeSendButtonAvailability` on a state transition rather than forcing the flag on, so two services never overwrite each other's decision.
+
+### 17.1 `IFileUploadService` — attachment upload
+
+Used when the host wants attached files transferred to a remote store / Files API and later referenced by an opaque `file_id`, instead of inlining their bytes in the chat payload.
+
+| Member | Role |
+|---|---|
+| `ShouldHandle(ALocalPath, ATarget)` | Per-file decision, on the UI thread, for every file picked through the open dialog. The service takes ownership only of the files it returns `True` for. |
+| `SubmitForUpload(ALocalPath, ATarget, AOnComplete)` | Returns immediately; the transfer runs async. `AOnComplete` fires once (UI thread) with a `TUploadResult` (`Ok`/`Fail`). |
+| `TryGetFileId(ALocalPath, out AFileId)` | Queried at submit time, just before the chat payload is built; must not block. |
+| `CancelOrDelete(ALocalPath)` | Called when the user removes an attachment, or to evict a previously uploaded file. Must tolerate unknown paths. |
+| `PendingCount` / `OnPendingChanged` | Drive the send-button lock while at least one transfer is in flight. |
+
+The vendor is responsible for thread-marshaling, concurrency caps and persistence of file ids for later cleanup. Pythia core stays agnostic of those concerns.
+
+### 17.2 `IKnowledgeIndexingService` — knowledge indexing (RAG)
+
+Used when a selected **Knowledge** file must be indexed into a vector store / retrieval corpus before the LLM can reference it through a retrieval tool (`file_search`, semantic retrieval, libraries…).
+
+It looks like the upload service but models a **multi-stage pipeline** — typically `upload → ingest → chunk + embed → ready` — whose completion is observed by polling or webhooks (durations from seconds to minutes):
+
+| Member | Role |
+|---|---|
+| `ShouldHandle(ALocalPath, ATarget)` | Called only for `TOpenFileTarget.Knowledge`; every other target is routed to `IFileUploadService`. |
+| `SubmitForIndexing(ALocalPath, ATarget, AOnComplete)` | Returns immediately; owns the upload + ingest + polling loop. `AOnComplete` fires once when the file is **fully indexed** (Ready) or has Failed. |
+| `TryGetIndexRef(ALocalPath, out AIndexRef)` | Returns the opaque reference the vendor needs to consume the indexed file — e.g. `vector_store_id` (OpenAI), corpus / document id (Gemini), library id (Mistral). Must not block. |
+| `CancelOrDelete`, `PendingCount`, `OnPendingChanged` | Same roles as the upload service; `PendingCount` counts any non-terminal stage (queued, uploading, indexing). |
+
+> [!IMPORTANT]
+> **Ready semantics matter.** A file is Ready only when fully indexed and discoverable by the retrieval tool. A finished upload that has not yet been embedded must **not** be reported as Ready, otherwise the LLM may query an empty index.
+
+### 17.3 `IAudioTranscriptionService` — microphone dictation
+
+Turns a microphone capture into text in the input bar. This is the **vendor seam of the built-in audio capture**: Pythia records from the microphone browser-side (vendor-agnostic), writes a temporary audio file, then hands it to this service; the vendor only performs speech-to-text. It supersedes the manual "bring your own audio file" approach described in §19 (Audio input).
+
+```pascal
+TAudioTranscriptionResult = record
+  Success: Boolean;
+  Text: string;
+  ErrorMessage: string;
+  class function Ok(const AText: string): TAudioTranscriptionResult; static;
+  class function Fail(const AErrorMessage: string): TAudioTranscriptionResult; static;
+end;
+
+IAudioTranscriptionService = interface
+  procedure SubmitForTranscription(const AAudioFilePath: string;
+    const AOnComplete: TAudioTranscriptionCompleteProc = nil);
+end;
+```
+
+End-to-end flow, all orchestrated by Pythia:
+
+1. Registering the service is what **reveals the microphone button** — the host adds `ebMicrophone` only when the service is wired, so dictation is offered only when it can be processed end to end.
+2. A first click starts recording, a second stops it; the icon turns **red while capturing**, and the send button is locked for the whole capture.
+3. Pythia writes the capture to a temporary `webm/opus` file and calls `SubmitForTranscription`.
+4. The vendor transcribes and calls `AOnComplete` once (UI thread) with `Ok(text)` or `Fail(msg)`.
+5. Pythia inserts the recognized text **at the caret** of the input bar (with smart spacing) and restores the send button — on success **or** failure.
+
+Because the capture file is just an audio file, the vendor typically reuses a general helper (an `AsyncTranscribe` returning a promise over the SDK transcription call) and maps its result to `TAudioTranscriptionResult`:
+
+```pascal
+procedure TOpenAITranscriptionService.SubmitForTranscription(
+  const AAudioFilePath: string; const AOnComplete: TAudioTranscriptionCompleteProc);
+begin
+  var OnComplete := AOnComplete;
+  FUtils.AsyncTranscribe(AAudioFilePath)   // TPromise<TTranscription>, whisper-1 by default
+    .&Then(procedure (Value: TTranscription)
+      begin
+        if Assigned(OnComplete) then OnComplete(TAudioTranscriptionResult.Ok(Value.Text));
+      end)
+    .&Catch(procedure (E: Exception)
+      begin
+        if Assigned(OnComplete) then OnComplete(TAudioTranscriptionResult.Fail(E.Message));
+      end);
+end;
+```
+
+> The `webm/opus` container produced by the recorder is accepted as-is by the OpenAI transcription endpoint and is playable by `DisplayAudioTemplate.js`, so no transcoding is needed on the Delphi side. Producing the capture stays vendor-neutral; only this service knows the provider.
+
+<br>
+
+## 18 Media output — image, audio, video, TTS
 
 **Pythia-Webview2** natively renders media outputs produced by an LLM: images, audios, videos, files. Rendering relies on dedicated JS templates (`DisplayImageTemplate.js`, `DisplayAudioTemplate.js`, `DisplayVideoTemplate.js`, `DisplayFileTemplate.js`) and on the `WVPythia.Net.MediaCodec.pas` utility unit on the Delphi side.
 
@@ -2182,7 +2565,10 @@ For a media family to be visible in the UI, the matching capability must be acti
 
 <br>
 
-## 18 Audio input (transcription)
+## 19 Audio input (transcription)
+
+> [!NOTE]
+> Since the introduction of `IAudioTranscriptionService` (see §17.3), Pythia ships a **built-in microphone capture**: registering that service reveals the microphone button, records the audio browser-side, and routes the file to the vendor for transcription automatically. The manual flow below remains valid when no transcription service is wired, or when you want to drive audio input entirely yourself.
 
 **Current state.** This version of **Pythia-Webview2** does not offer live audio recording. The supported flow consists of **providing an existing audio file** that the application code then transcribes before pushing the result into the input bar. The microphone icon in the bar — enabled via `ebMicrophone` — is present in the UI but **no default handler is associated with it**: it is entirely the developer's responsibility to wire the desired logic.
 
@@ -2241,7 +2627,7 @@ The user can fix this from the model configuration panel by selecting a model fo
 
 <br>
 
-## 19 File attachments & file drawer
+## 20 File attachments & file drawer
 
 The user can attach files to a prompt through the paperclip icon in the input bar. The file drawer displays the selected pieces before submission; on send, they are forwarded to the vendor service in `TInputPromptState.Files`, `Images`, or `KnowledgeSearch`, depending on the chosen category.
 
@@ -2259,7 +2645,7 @@ The `Files`, `Vision`, and `KnowledgeSearch` capabilities must be active in `<Ex
 
 <br>
 
-## 20 Themes & Look & Feel
+## 21 Themes & Look & Feel
 
 **Pythia-Webview2** ships two native themes defined by the `TLookAndFeel` enum (`WVPythia.Types.pas`):
 
@@ -2292,7 +2678,7 @@ The CSS variables and classes used by the JS templates are defined in `assets/in
 
 <br>
 
-## 21 Two-step confirmation
+## 22 Two-step confirmation
 
 Several destructive actions — deleting a message, deleting a chat session — go through a confirmation dialog before being executed. The pattern relies on **two distinct events** that must not be conflated, on pain of an infinite loop or silent deletion without confirmation.
 
@@ -2339,7 +2725,7 @@ The `TDialogGoal` enum (`WVPythia.Types.pas`) lists the two natively supported g
 
 <br>
 
-## 22 Chat sessions, persistence, pagination
+## 23 Chat sessions, persistence, pagination
 
 Sessions form the chat's continuity layer: they retain the history of turns, allow returning to an existing conversation, and keep the display synchronized with the JSON store. The event manager activates, renames, paginates, or prepares deletion through `IPersistentChat` and `IPythiaBrowser`, so that the UI and persistence stay aligned.
 
@@ -2370,7 +2756,7 @@ Deletion relies on alignment between the UI and the persistent state. Never dele
 
 <br>
 
-## 23 Plugin UI and JS ↔ Delphi bridge
+## 24 Plugin UI and JS ↔ Delphi bridge
 
 ### Introduction
 
@@ -2438,7 +2824,7 @@ Each template is written as a self-executing function that does not pollute the 
 })();
 ```
 
-Variables, functions, and listeners declared inside stay confined to the closure. This is the convention followed by the 22 shipped templates; it is necessary for several templates to coexist without name collisions.
+Variables, functions, and listeners declared inside stay confined to the closure. This is the convention followed by the 24 shipped templates; it is necessary for several templates to coexist without name collisions.
 
 **2. Return JSON to Delphi.**
 
@@ -2515,7 +2901,7 @@ end;
 
 <br>
 
-## 24 Internationalization
+## 25 Internationalization
 
 Pythia-Webview2 ships ready-to-use locale files under `assets/lang/`. Each JSON file describes the strings displayed by the interface, grouped by logical sections such as `more`, `settings`, and `dialogs`. The mechanism covers both the JavaScript layer — which queries labels through a `t('key')` API — and the Pascal layer, where strings are stored in global variables reloaded on every language switch.
 
@@ -2673,7 +3059,7 @@ From that moment on, every call to `SetLanguage` retranslates both native string
 
 <br>
 
-## 25 JSON configuration files
+## 26 JSON configuration files
 
 On first launch, **Pythia-Webview2** creates application configuration files derived from the executable name. The files most often edited by the integrator live in the application support folder:
 
@@ -2739,7 +3125,8 @@ The exact set of generated files may vary with the project version and enabled f
   "deepResearch": false,
   "integration": true,
   "integrationFunction": true,
-  "model": true
+  "model": true,
+  "project": true
 }
 ```
 
@@ -2815,13 +3202,13 @@ Other files may be created near the executable or under the application folder, 
 
 <br>
 
-## 26 API surface — key interfaces
+## 27 API surface — key interfaces
 
 The table below gathers the main contracts to know in order to integrate the component. These interfaces are the stable entry points between the browser, commands, application services, and configuration providers; the concrete FMX/VCL classes consume them without exposing their internal details.
 
 |Interface|Unit|Role|
 |-|-|-|
-|`IPythiaBrowser`|`WVPythia.Chat.Interfaces.pas`|Component façade: `ExecuteScript`, `DisplayError`, `ApiKeyValuesUpdate`, etc. — see the full interface lines 49-238|
+|`IPythiaBrowser`|`WVPythia.Chat.Interfaces.pas`|Component façade: `ExecuteScript`, `DisplayError`, `ApiKeyValuesUpdate`, etc. — see the full interface lines 233-575|
 |`ICommandPlugin` / `ICommandRegistry`|`WVPythia.Chat.Interfaces.pas`|Command pipeline|
 |`IApiKeyService`|`WVPythia.ApiKey.Service.Intf.pas`|`CreateKey` / `DeleteKey` / `Exists`|
 |`ISecretStore`|`WVPythia.Chat.Interfaces.pas`|Windows-Registry abstraction|
@@ -2832,9 +3219,9 @@ The table below gathers the main contracts to know in order to integrate the com
 
 <br>
 
-## 27 `TBrowserChatEvent` event table
+## 28 `TBrowserChatEvent` event table
 
-Enumeration: `WVPythia.Types.pas` — **38 values**, mapped to wire names via `TBrowserChatEventHelper.Map` (`WVPythia.Types.pas`).
+Enumeration: `WVPythia.Types.pas` — **45 values**, mapped to wire names via `TBrowserChatEventHelper.Map` (`WVPythia.Types.pas`).
 
 <br>
 
@@ -2855,9 +3242,12 @@ Enumeration: `WVPythia.Types.pas` — **38 values**, mapped to wire names via `T
 |-|-|
 |`InputSubmit`|`input-submit`|
 |`InputState`|`input-state`|
-|`InputString`|—|
+|`InputString`|`input-string`|
 |`StopSubmit`|`stop-submit`|
 |`AudioInput`|`audio-input`|
+|`AudioRecord`|`audio-record`|
+|`FileDropIn`|`file-drop-in`|
+|`PasteFromClipboard`|`paste-from-clipboard`|
 
 ### Chat sessions
 
@@ -2884,6 +3274,9 @@ Enumeration: `WVPythia.Types.pas` — **38 values**, mapped to wire names via `T
 |Delphi|Wire|
 |-|-|
 |`OpenFileDialog`|`open-file-dialog`|
+|`FileRemoved`|`file-removed`|
+|`FolderSelection`|`folder-selection`|
+|`FolderState`|`folder-state`|
 |`OpenIntegrationFunctionDialog`|`open-integration-function-dialog`|
 |`OpenIntegrationMcpDialog`|`open-integration-mcp-dialog`|
 |`OpenIntegrationSkillsDialog`|`open-integration-skills-dialog`|
@@ -2891,6 +3284,7 @@ Enumeration: `WVPythia.Types.pas` — **38 values**, mapped to wire names via `T
 |`OpenCustomDialog`|`open-custom-dialog`|
 |`DisplayFileClick`|`display-file-click`|
 |`DialogConfirmationResponse`|`dialog-confirmation-response`|
+|`WebDecisionDlgResponse`|`web-decision-dlg-response`|
 
 ### Model selector
 
@@ -2929,7 +3323,7 @@ Enumeration: `WVPythia.Types.pas` — **38 values**, mapped to wire names via `T
 
 <br>
 
-## 28 FMX ↔ VCL matrix
+## 29 FMX ↔ VCL matrix
 
 |Element|VCL|FMX|
 |-|-|-|
@@ -2938,11 +3332,11 @@ Enumeration: `WVPythia.Types.pas` — **38 values**, mapped to wire names via `T
 |OpenDialog|`VCL.WVPythia.OpenDialog.pas`|`FMX.WVPythia.OpenDialog.pas`|
 |Language manager|`TVCLPythiaLanguageManager`|`TFMXPythiaLanguageManager`|
 |Public surface|Identical|Identical|
-|Demo|`demos/VCL/new-projet`, `demos/VCL/pythia-sample`, `demos/VCL/pythia-anthropic`|`demos/FMX/new-projet`, `demos/FMX/plugin-git`, `demos/FMX/plugin-snippet`|
+|Demo|`demos/VCL/new-projet`, `demos/VCL/pythia-sample`, `demos/VCL/pythia-anthropic`|`demos/FMX/new-projet`, `demos/FMX/plugin-git`, `demos/FMX/plugin-grep`, `demos/FMX/plugin-snippet`, `demos/FMX/pythia-openai`|
 
 <br>
 
-## 29 JS template catalog
+## 30 JS template catalog
 
 The `TTemplateType` enumeration (`WVPythia.Template.Manager.pas`) associates each template with a file under `assets/scripts/`. The table below is the complete reference, ordered by enum value, and is the starting point for any substitution via `LoadCustomTemplate` (see §11) — the developer must locate the template to override starting from the UI area they want to modify.
 
@@ -2957,10 +3351,11 @@ The `TTemplateType` enumeration (`WVPythia.Template.Manager.pas`) associates eac
 | `js_images` | `DisplayImageTemplate.js` | Rendering of generated images |
 | `js_promptFile` | `PromptFileTemplate.js` | Display of attachments inside the user turn |
 | `js_audio` | `DisplayAudioTemplate.js` | Inline audio player |
+| `js_audioRecording` | `AudioRecordingTemplate.js` | Browser-side microphone capture (MediaRecorder, `webm/opus`); driven by `audio-recording-start/stop/switch`, returns the capture via the `audio-record` event |
 | `js_video` | `DisplayVideoTemplate.js` | Inline video player |
 | `js_displayfile` | `DisplayFileTemplate.js` | Clickable file card inside the assistant turn |
 | `js_selector` | `SelectorTemplate.js` | Card selector (functions, MCP, skills, agents) |
-| `js_confirmationDialog` | `ConfirmationDialogTemplate.js` | Two-step confirmation dialog (see §21) |
+| `js_confirmationDialog` | `ConfirmationDialogTemplate.js` | Two-step confirmation dialog (see §22) |
 | `js_filesMenager` | `FilesDrawerTemplate.js` | Drawer of files attached to the input bar |
 | `js_errors` | `ErrorsTemplate.js` | Rendering of error messages |
 | `js_requestParams` | `RequestParamsTemplate.js` | Settings panel (temperature, top-p, system prompt…) |
@@ -2970,13 +3365,15 @@ The `TTemplateType` enumeration (`WVPythia.Template.Manager.pas`) associates eac
 | `js_cardSelector` | `CardSelectorTemplate.js` | Multi-card selection dialog |
 | `js_promptSummary` | `PromptSummaryTemplate.js` | Compact summary of a submitted prompt |
 | `js_inputDialog` | `InputDialogTemplate.js` | Modal input box (for example `/api-key new`) |
+| `js_activityLogo` | `ActivityLogoTemplate.js` | Activity logo animation shown while the browser is busy/locked |
+| `js_webDecision` | `WebDecisionDlgTemplate.js` | Modal decision dialog driven from Delphi (`WebDecisionDlg`) awaiting a user choice |
 | `js_injectionEnded` | `InjectionEndedTemplate.js` | End-of-injection signal for JS |
 
-23 entries in total: one HTML root and 22 JavaScript fragments.
+26 entries in total: one HTML root and 25 JavaScript fragments.
 
 <br>
 
-## 30 Developer mode & diagnostics
+## 31 Developer mode & diagnostics
 
 The `DEV_MODE` conditional define enables diagnostic output useful during integration.
 
@@ -3055,7 +3452,7 @@ If the UI does not load correctly, first check:
 
 <br>
 
-## 31 Deployment
+## 32 Deployment
 
 ### Introduction
 
@@ -3159,26 +3556,26 @@ Binaries are produced under `bin32` or `bin64` depending on the target. Choose x
 
 <br>
 
-## 32 Glossary
+## 33 Glossary
 
 | Term | Definition |
 |---|---|
 | **Adapter** | Application class implementing `IChatManagedItemDialogService`, which acts as a bridge between UI events and business logic (see §8 adapter sub-section). |
 | **Card** | Configuration unit for an integration (function, MCP, skill, agent, custom). Stored in a JSON file under `<ExeName>/support/`; displayed by the UI in the Cards panel (see §14). |
 | **Capabilities** | Boolean configuration of features exposed by the application (endpoints, media, integrations…). Driven by `ICapabilities`, persisted in `<ExeName>-capabilities.json` (see §13). |
-| **Custom event** | JSON message emitted by a JS template through `postMessage` with `event: "custom-event"`. Received on the Delphi side by `IChatManagedItemDialogService.ActivateCustomEvent` (see §23). |
+| **Custom event** | JSON message emitted by a JS template through `postMessage` with `event: "custom-event"`. Received on the Delphi side by `IChatManagedItemDialogService.ActivateCustomEvent` (see §24). |
 | **Host** | Delphi application that embeds the **Pythia-Webview2** component. |
 | **Managed item** | Item selectable from the UI: a card or an integration option. Represented by `TChatManagedItemRef` (Id + Name) when returned from a selection. |
 | **Plugin (command)** | Class implementing a slash command. Inherits from `TCommandPlugin`, wired via `Pythia.OnRegisterCommandPlugins` (see §12). |
 | **Prompt state** | Snapshot of the input bar at submission time. Type: `TInputPromptState`. Received by `IVendorServices.AsyncAwaitStreamChat` (see §16). |
-| **Template** | JS fragment injected into the WebView to render a portion of the UI. 22 templates shipped; each can be overridden via `LoadCustomTemplate` (see §11 and §29). |
+| **Template** | JS fragment injected into the WebView to render a portion of the UI. 24 templates shipped; each can be overridden via `LoadCustomTemplate` (see §11 and §30). |
 | **Turn** | A `user prompt / assistant response` pair in a chat session. Type: `TChatTurn`. |
 | **Vendor** | Application service implementing `IVendorServices`, which actually talks to the LLM API (Anthropic, OpenAI, etc.). Wired through the adapter (see §16). |
 | **WebView (host)** | `TWVBrowser` component on the VCL side, or the `TWVFMXBrowser` + `TWVFMXHost` + `TWVFMXCoreInit` stack on the FMX side, hosting the WebView2 runtime. |
 
 <br>
 
-## 33 Security & limits
+## 34 Security & limits
 
 ### Introduction
 
@@ -3311,7 +3708,7 @@ A deployment that keeps the WebView2 surface local, blocks unauthorized navigati
 
 <br>
 
-## 34 FAQ / pitfalls
+## 35 FAQ / pitfalls
 
 ### "The chat appears, but submitting a prompt does nothing"
 

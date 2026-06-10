@@ -12,6 +12,10 @@ This document complements the integrator tutorial ([integrator.md](../../docs/in
   - [`IPythiaBrowser` — component façade](#ibrowser--component-façade)
   - [`IChatManagedItemDialogService` — service adapter](#ichatmanageditemdialogservice--service-adapter)
   - [`IVendorServices` — LLM vendor](#ivendorservices--llm-vendor)
+  - [`IFileUploadService` — attachment upload](#ifileuploadservice--attachment-upload)
+  - [`IKnowledgeIndexingService` — knowledge indexing (RAG)](#iknowledgeindexingservice--knowledge-indexing-rag)
+  - [`IAudioTranscriptionService` — microphone transcription](#iaudiotranscriptionservice--microphone-transcription)
+  - [`IPythiaDisplayBlockAggregator` — vendor-neutral display blocks](#ipythiadisplayblockaggregator--vendor-neutral-display-blocks)
   - [`IApiKeyService` — API key CRUD](#iapikeyservice--api-key-crud)
   - [`ISecretStore` — secret persistence](#isecretstore--secret-persistence)
   - [`ICapabilities` — fluent capability builder](#icapabilities--fluent-capability-builder)
@@ -29,6 +33,8 @@ This document complements the integrator tutorial ([integrator.md](../../docs/in
   - [Model selector](#model-selector)
   - [Card selector](#card-selector)
   - [Settings & appearance](#settings--appearance)
+  - [File attachments & input](#file-attachments--input)
+  - [Projects & web dialog](#projects--web-dialog)
   - [Extension channel](#extension-channel)
 - [Part 3 — Templates (`TTemplateType`)](#part-3--templates-ttemplatetype)
   - [Loading model](#loading-model)
@@ -82,34 +88,68 @@ The interfaces below form the stable API surface of Pythia-Webview2. The concret
 | **Implementers** | `TVCLPythia`, `TFMXPythia` (via inheritance through the `T*Browser*` chain). |
 | **Consumers** | Service adapters, vendor services, command plugins. |
 
-**Key members (selection — see source for the full surface):**
+**Key members (curated selection — the full interface is large; see the source for the complete surface):**
 
 ```pascal
-function ExecuteScript(const AScript: string): Boolean;
-procedure DisplayStream(const AText, AThinking: string;
- const AIsFinal: Boolean);
-function Display(const AText: string; const AIsFinal: Boolean): Boolean;
-function DisplayError(const AText: string): Boolean;
-function DisplayWarning(const AText: string): Boolean;
-function DisplaySuccess(const AText: string): Boolean;
-function BrowserInput(const AText: string): Boolean;
-procedure ApiKeyValuesUpdate(const KeyName: string);
-procedure ReasoningHide;
-function UpdateFileDrawer(const Files, Images, Knowledge: TArray<string>): Boolean;
+// --- Render a turn (the everyday rendering API for a vendor service) ---
+function Prompt(const AText: string): Boolean;                       // render the user turn
+function Display(const AText: string;
+  Scroll: Boolean = True): Boolean;                                  // full assistant text
+function DisplayStream(const AText: string; const AThink: string;
+  Scroll: Boolean = True): Boolean;                                  // streamed text + reasoning
+function DisplayError(const Value: string): Boolean;
+function DisplayWarning(const Value: string): Boolean;
+function DisplaySuccess(const Value: string): Boolean;
+function DisplayFooter(const Value: string): Boolean;
 
-property Escape: Boolean;             // true when the user clicked Stop
-property Locked: Boolean;
-property Theme: string;
+// --- Block-oriented streaming (assistant, reasoning, tools, media) ---
+function DisplayAssistantStream(const ADelta: string; Scroll: Boolean = True): Boolean;
+function DisplayReasoningStream(const ADelta: string; Scroll: Boolean = True): Boolean;
+function DisplayToolStatus(const AText: string; Scroll: Boolean = True): Boolean;
+function DisplayToolOutput(const ATitle, AText: string; Scroll: Boolean = True): Boolean;
+function DisplayMedia(Kind: TDisplayKind;
+  const Value: TArray<string>; Scroll: Boolean = True): Boolean;     // image / audio / video / file
+
+// --- Input bar & commands ---
+function BubbleInputSetText(const Value: string): Boolean;           // prefill the compose box
+function BrowserInput(const AMessage, AKey: string;
+  const Hidden: Boolean = False): Boolean;                           // prompt the user for a value
+function TryHandleAsCommand(const PromptText: string): Boolean;      // run a /slash command
+function UpdateFileDrawer: Boolean;                                  // refresh the attached-files drawer
+
+// --- Lifecycle & UI control ---
+procedure Clear;
+procedure SetFocus;
+procedure BeginUpdate; procedure EndUpdate;                          // batch DOM updates
+procedure SetTheme(const Value: string);
+procedure SetLanguage(const Value: string);
+function ExecuteScript(const Script: string): Boolean;              // raw JS injection
+procedure ApiKeyValuesUpdate(const KeyName: string);
+
+// --- State (read / write) ---
+property Escape: Boolean;             // True after the user clicked Stop -> cancel the stream
+property Locked: Boolean;             // True while a request is in flight
+property CustomPanels: TCustomPanels;
+property EnabledButtons: TEnabledButtons;
 property ApiKeySecretStore: ISecretStore;
 property CommandLine: ICommandRegistry;
+property FileUploadService: IFileUploadService;
+property KnowledgeIndexingService: IKnowledgeIndexingService;
 
+// --- Lifecycle callbacks ---
+property OnChatSessionAutoRename: TProc<string, string>;
+property OnAfterSessionReloaded: TProc<string>;
+property OnNewChatRequested: TProc;
+
+// --- Resolve support-file paths (one getter per config file) ---
+function GetCapabilitiesFileName: string;
+function GetModelListFileName: string;
 function GetExchangeDebugFileName: string;
 function GetAPIKeyNamesFileName: string;
-function GetCapabilitiesFileName: string;
-// ... + GetXxxCardsFileName for every card family
+// ... + GetXxxCardsFileName for every card family, GetChatSessionsFileName, etc.
 ```
 
-**Where to use it.** A vendor service receives `IPythiaBrowser` in its constructor and calls `DisplayStream` during streaming, `DisplayError`/`DisplaySuccess` for status messages, and reads `Escape` to detect cancellation. Plugins use `BrowserInput` to inject text into the input bar.
+**Where to use it.** A vendor service receives `IPythiaBrowser` in its constructor and calls `DisplayStream` (or the `Display*Stream` block helpers) during streaming, `DisplayError`/`DisplaySuccess` for status messages, and reads `Escape` to detect cancellation. Plugins use `BubbleInputSetText` to prefill the input bar, `BrowserInput` to prompt the user for a value, and `TryHandleAsCommand` to trigger slash commands programmatically.
 
 <br>
 
@@ -232,6 +272,128 @@ end;
 >   - advanced request/response handling,
 >   - custom processing pipelines.
 >- Such extensions **SHOULD** remain consistent with the abstraction goals of the interface and **MUST NOT** break compatibility with existing consumers.
+
+<br>
+
+### `IFileUploadService` — attachment upload
+
+| Field | Value |
+|---|---|
+| **Unit** | `WVPythia.Chat.Interfaces.pas` |
+| **Purpose** | Optional vendor service that transfers attached files to a remote Files API and references them by an opaque `file_id` instead of inlining their bytes. |
+| **Implementers** | Host application (e.g. `TDownloadService` in the `pythia-openai` demo). |
+| **Consumers** | Injected via `IPythiaBrowser.FileUploadService`; driven by the file-attachment pipeline and `RecomputeSendButtonAvailability`. |
+
+**Key members:**
+
+```pascal
+function ShouldHandle(const ALocalPath: string; const ATarget: TOpenFileTarget): Boolean;
+procedure SubmitForUpload(const ALocalPath: string; const ATarget: TOpenFileTarget;
+ const AOnComplete: TUploadCompleteProc = nil);
+procedure CancelOrDelete(const ALocalPath: string);
+function TryGetFileId(const ALocalPath: string; out AFileId: string): Boolean;
+function PendingCount: Integer;
+property OnPendingChanged: TProc;   // fired when PendingCount crosses 0
+```
+
+Completion type: `TUploadResult` (`LocalPath`, `Success`, `FileId`, `ErrorMessage`; `Ok` / `Fail`), passed through `TUploadCompleteProc = TProc<TUploadResult>`.
+
+<br>
+
+### `IKnowledgeIndexingService` — knowledge indexing (RAG)
+
+| Field | Value |
+|---|---|
+| **Unit** | `WVPythia.Chat.Interfaces.pas` |
+| **Purpose** | Optional vendor service that indexes `Knowledge` attachments into a vector store / retrieval corpus through a multi-stage pipeline (upload → ingest → embed → ready), for retrieval (`file_search`). |
+| **Implementers** | Host application (e.g. `TOpenAIKnowledgeIndexingService`, `Demo.OpenAI.VectorFileStore.pas`). |
+| **Consumers** | Injected via `IPythiaBrowser.KnowledgeIndexingService`; handles files picked under `TOpenFileTarget.Knowledge`. |
+
+**Key members:**
+
+```pascal
+function ShouldHandle(const ALocalPath: string; const ATarget: TOpenFileTarget): Boolean;
+procedure SubmitForIndexing(const ALocalPath: string; const ATarget: TOpenFileTarget;
+ const AOnComplete: TUploadCompleteProc = nil);
+procedure CancelOrDelete(const ALocalPath: string);
+function TryGetIndexRef(const ALocalPath: string; out AIndexRef: string): Boolean;
+function PendingCount: Integer;
+property OnPendingChanged: TProc;
+```
+
+`AOnComplete` (same `TUploadCompleteProc` as the upload service) fires only once the file is **fully indexed** (Ready), never on a bare upload. `TryGetIndexRef` returns the opaque reference the LLM consumes (e.g. `vector_store_id`).
+
+<br>
+
+### `IAudioTranscriptionService` — microphone transcription
+
+| Field | Value |
+|---|---|
+| **Unit** | `WVPythia.Chat.Interfaces.pas` |
+| **Purpose** | Optional vendor service that turns a microphone capture file into text. Pythia owns the recording (vendor-neutral); the vendor only performs speech-to-text. |
+| **Implementers** | Host application (e.g. `TOpenAITranscriptionService` in the `pythia-openai` demo, Whisper by default). |
+| **Consumers** | Injected via `IPythiaBrowser.AudioTranscriptionService`; called by `TBrowserEventHandlers.AudioRecordEvent`. Its presence reveals the microphone button. |
+
+**Key members:**
+
+```pascal
+TAudioTranscriptionResult = record
+ Success: Boolean;
+ Text: string;
+ ErrorMessage: string;
+ class function Ok(const AText: string): TAudioTranscriptionResult; static;
+ class function Fail(const AErrorMessage: string): TAudioTranscriptionResult; static;
+end;
+
+IAudioTranscriptionService = interface
+ procedure SubmitForTranscription(const AAudioFilePath: string;
+   const AOnComplete: TAudioTranscriptionCompleteProc = nil);
+end;
+```
+
+`AOnComplete` (`TAudioTranscriptionCompleteProc = TProc<TAudioTranscriptionResult>`) fires once on the UI thread; the recognized text is inserted at the caret of the input bar. The capture is a `webm/opus` file accepted as-is by the OpenAI transcription endpoint.
+
+<br>
+
+### `IPythiaDisplayBlockAggregator` — vendor-neutral display blocks
+
+| Field | Value |
+|---|---|
+| **Unit** | `WVPythia.Chat.DisplayBlocks.pas` |
+| **Purpose** | Accumulate a streamed turn into an ordered array of persistable `TChatDisplayBlock` (assistant / reasoning / tool / status segments), independently of any vendor's stream vocabulary. |
+| **Implementers** | `TPythiaDisplayBlockAggregator` (ready-to-use). Each vendor subclasses it to translate its own stream events into the neutral calls. |
+| **Consumers** | The vendor service during `AsyncAwaitStreamChat`; the snapshot is handed to `TManagedItemLLMResult.DisplayBlockResults` at finalization, then replayed on session reload. |
+
+**Key members:**
+
+```pascal
+IPythiaDisplayBlockAggregator = interface(IPythiaDisplayBlockSnapshot)
+  ['{7318E843-5D1B-4C20-B371-69BDB8C1AF60}']
+  procedure AppendAssistantDelta(const Delta: string);
+  procedure AppendReasoningDelta(const Delta: string);
+  procedure AppendToolResultDelta(const Delta: string);                // stream into the open tool block
+  procedure AppendToolUse(const Title: string); overload;
+  procedure AppendToolUse(const ToolUseId, Title: string); overload;   // open a tool block
+  procedure AppendToolResult(const Text: string); overload;
+  procedure AppendToolResult(const ToolUseId, Text: string;
+    const IsError: Boolean = False); overload;                         // close the pairing
+  procedure AppendStatus(const Title: string); overload;
+  procedure AppendStatus(const Title, Text: string); overload;
+  procedure AppendAssistantText(const Text: string);                   // finalized (non-delta) assistant text
+  procedure MarkToolError(const ToolUseId: string);
+  procedure CloseCurrent;
+  function  CloneAll: TArray<TChatDisplayBlock>;                       // ordered live blocks
+  function  IsEmpty: Boolean;
+  // inherited from IPythiaDisplayBlockSnapshot:
+  // function CloneDisplayBlocks: TArray<TChatDisplayBlock>;           // durable snapshot for persistence
+end;
+```
+
+**Block unit.** `TChatDisplayBlock` (`WVPythia.ChatSession.Controller.pas`) carries `Kind`, `Title`, `Text`, `Url`, `Items`. The `Kind` is one of the `DISPLAY_BLOCK_KIND_*` constants (`WVPythia.Chat.Consts.pas`): `assistant`, `reasoning`, `status`, `toolStatus`, `toolOutput`, `toolError`, `sourceStatus`, `sourceList`, `sourceDocument`, `citationList`, `artifactList`.
+
+**Behavior.** Consecutive same-kind deltas are merged into a single block; a tool-use block is paired with its later tool-result by `ToolUseId`, so one persisted entry carries both the tool identity and its output.
+
+**Where to use it.** The vendor subclasses `TPythiaDisplayBlockAggregator`, translates **its own** stream snapshots into `Append…`/`MarkToolError`/`CloseCurrent` (keeping provider-specific title/detail formatting on the vendor side), drives the live UI in parallel through the `IPythiaBrowser.Display*` block methods (`DisplayAssistantStream`, `DisplayToolStatus`, `DisplayToolOutput`, …), and finally passes `CloneDisplayBlocks` to `TManagedItemLLMResult.DisplayBlockResults`. On reload, Pythia replays the persisted blocks via `IPythiaBrowser.DisplayBlocks`. See §16 (“Structured display blocks”) of `pythia-documentation.md` for the full walkthrough.
 
 <br>
 
@@ -514,7 +676,8 @@ The framework parses each JSON exactly once into `FReader`; handlers execute, th
 | `InputState` | `input-state` | Input bar | Handler chain | Live updates while typing. |
 | `InputString` | — | Internal | Internal | Has no wire mapping; used for purely Delphi-side flows. |
 | `StopSubmit` | `stop-submit` | Input bar (Stop button) | Sets `IPythiaBrowser.Escape := True` | The vendor must poll `Escape` to cancel. |
-| `AudioInput` | `audio-input` | Input bar (microphone) | `DoActivateAudioInputEvent` | No default handler — host implements. |
+| `AudioInput` | `audio-input` | Input bar (microphone) | `AudioInputEvent` → `AudioRecordingSwitch` (toggle) when an `IAudioTranscriptionService` is registered, else legacy `DoActivateAudioInputEvent`. | The service's presence reveals the microphone button. |
+| `AudioRecord` | `audio-record` | `AudioRecordingTemplate.js` (on stop) | `AudioRecordEvent` → saves the `webm/opus` capture to a temp file, then `IAudioTranscriptionService.SubmitForTranscription`. | Payload: `{ "event":"audio-record", "data":"<base64>" }`. |
 
 ### Chat sessions
 
@@ -578,6 +741,22 @@ The framework parses each JSON exactly once into `FReader`; handlers execute, th
 | `LanguageSelectedEvent` | `language-selected` | Language switch | Calls `SetLanguage` then fires `OnTranslationsLoaded` |
 | `ScrollButtonSelectedEvent` | `scroll-button-selected` | Scroll-button visibility toggle | Persists to main values |
 
+### File attachments & input
+
+| Delphi | Wire | Producer | Consumer |
+|---|---|---|---|
+| `FileRemoved` | `file-removed` | File drawer — remove button | `FileRemovedEvent` → `CancelOrDelete` on the upload / indexing services |
+| `FileDropIn` | `file-drop-in` | Drag & drop onto the input bar | `FileDropInEvent` — attaches the dropped files |
+| `PasteFromClipboard` | `paste-from-clipboard` | Paste into the textarea | `PasteFromClipboardEvent` → `IClipboardReader` (files, image, or text) |
+
+### Projects & web dialog
+
+| Delphi | Wire | Producer | Consumer |
+|---|---|---|---|
+| `FolderSelection` | `folder-selection` | Input bar — Project button | `FolderSelectionEvent` → `IOpenDialog.ExecuteFolder` |
+| `FolderState` | `folder-state` | Input bar — project menu | `FolderStateEvent` — persists the active project list to disk |
+| `WebDecisionDlgResponse` | `web-decision-dlg-response` | `WebDecisionDlgTemplate.js` (OK / Cancel / Close) | `WebDecisionDlgResponseEvent` → resolves the pending `WebDecisionDlg` broker |
+
 ### Extension channel
 
 | Delphi | Wire | Producer | Consumer |
@@ -601,7 +780,7 @@ The framework does **not** parse the payload; it forwards the raw JSON. The appl
 
 ### Loading model
 
-Templates are loaded from the disk path `<exe folder>\..\assets` (resolved at runtime). The 22 JS files plus `index.htm` make up the entire UI surface.
+Templates are loaded from the disk path `<exe folder>\..\assets` (resolved at runtime). The 25 JS files plus `index.htm` make up the entire UI surface.
 
 Two loading strategies:
 
@@ -627,20 +806,23 @@ Defined by the enum `TTemplateType` (`WVPythia.Template.Manager.pas`). Files und
 | 7 | `js_images` | `DisplayImageTemplate.js` | Rendering of generated images. |
 | 8 | `js_promptFile` | `PromptFileTemplate.js` | Display of attachments inside the user turn. |
 | 9 | `js_audio` | `DisplayAudioTemplate.js` | Inline audio player. |
-| 10 | `js_video` | `DisplayVideoTemplate.js` | Inline video player. |
-| 11 | `js_displayfile` | `DisplayFileTemplate.js` | Clickable file card inside the assistant turn. |
-| 12 | `js_selector` | `SelectorTemplate.js` | Card selector core (functions, MCP, skills, agents, custom). |
-| 13 | `js_confirmationDialog` | `ConfirmationDialogTemplate.js` | Two-step confirmation dialog. |
-| 14 | `js_filesMenager` | `FilesDrawerTemplate.js` | Drawer of files attached to the input bar. |
-| 15 | `js_errors` | `ErrorsTemplate.js` | Rendering of error messages. |
-| 16 | `js_requestParams` | `RequestParamsTemplate.js` | Settings panel (temperature, top-p, system prompt…). |
-| 17 | `js_bootstrapDictionary` | `BootstrapDictionaryTemplate.js` | i18n dictionary loader and `window.AppI18n.t` helper. |
-| 18 | `js_models` | `ModelsTemplate.js` | Model selector. |
-| 19 | `js_chatFooter` | `ChatFooterTemplate.js` | Chat footer (icons, status indicators). |
-| 20 | `js_cardSelector` | `CardSelectorTemplate.js` | Multi-card selection dialog. |
-| 21 | `js_promptSummary` | `PromptSummaryTemplate.js` | Compact summary of a submitted prompt. |
-| 22 | `js_inputDialog` | `InputDialogTemplate.js` | Modal input box (used by `/api-key new`, etc.). |
-| 23 | `js_injectionEnded` | `InjectionEndedTemplate.js` | End-of-injection signal — final readiness flag. |
+| 10 | `js_audioRecording` | `AudioRecordingTemplate.js` | Browser-side microphone capture (MediaRecorder, `webm/opus`); driven by the host's `audio-recording-start/stop/switch` messages, returns the capture through the `audio-record` event. |
+| 11 | `js_video` | `DisplayVideoTemplate.js` | Inline video player. |
+| 12 | `js_displayfile` | `DisplayFileTemplate.js` | Clickable file card inside the assistant turn. |
+| 13 | `js_selector` | `SelectorTemplate.js` | Card selector core (functions, MCP, skills, agents, custom). |
+| 14 | `js_confirmationDialog` | `ConfirmationDialogTemplate.js` | Two-step confirmation dialog. |
+| 15 | `js_filesMenager` | `FilesDrawerTemplate.js` | Drawer of files attached to the input bar. |
+| 16 | `js_errors` | `ErrorsTemplate.js` | Rendering of error messages. |
+| 17 | `js_requestParams` | `RequestParamsTemplate.js` | Settings panel (temperature, top-p, system prompt…). |
+| 18 | `js_bootstrapDictionary` | `BootstrapDictionaryTemplate.js` | i18n dictionary loader and `window.AppI18n.t` helper. |
+| 19 | `js_models` | `ModelsTemplate.js` | Model selector. |
+| 20 | `js_chatFooter` | `ChatFooterTemplate.js` | Chat footer (icons, status indicators). |
+| 21 | `js_cardSelector` | `CardSelectorTemplate.js` | Multi-card selection dialog. |
+| 22 | `js_promptSummary` | `PromptSummaryTemplate.js` | Compact summary of a submitted prompt. |
+| 23 | `js_inputDialog` | `InputDialogTemplate.js` | Modal input box (used by `/api-key new`, etc.). |
+| 24 | `js_activityLogo` | `ActivityLogoTemplate.js` | Animated activity logo / busy-indicator overlay (`ActivityShow` / `ActivityHide`). |
+| 25 | `js_webDecision` | `WebDecisionDlgTemplate.js` | Web confirmation dialog driven from Delphi (`web-decision-dlg-request` → `web-decision-dlg-response`). |
+| 26 | `js_injectionEnded` | `InjectionEndedTemplate.js` | End-of-injection signal — final readiness flag. |
 
 ### Override patterns
 
@@ -747,7 +929,19 @@ Microphone access is granted automatically to support local browser-side audio f
 >- Other WebView2 permissions are not granted automatically by the default implementation.
 >- Applications that relax the default navigation policy, load remote UI content, or render untrusted HTML/Markdown output should review this permission policy accordingly.
 
-This design keeps Speech-to-Text available while keeping the WebView2 permission surface intentionally narrow.
+**Secure-context requirement.** `getUserMedia` (microphone capture) is only exposed by the browser in a **secure context**. This is why the shell is served from the secure virtual host `https://app.local/index.htm` (the local `assets` folder mapped through `SetVirtualHostNameToFolderMapping`) rather than injected via `NavigateToString` — the latter produces an opaque `null` origin where `navigator.mediaDevices` is `undefined` and capture is impossible.
+
+**Where the grant lives.** `DoPermissionRequested` (`TVCLPythiaBridgeManager` / `TFMXPythiaBridgeManager`) is the WebView2 callback that answers a permission request; the default implementation calls `Set_State(ALLOW)` only for `COREWEBVIEW2_PERMISSION_KIND_MICROPHONE`. But that decision is **not re-evaluated on every capture**.
+
+>[!IMPORTANT]
+>**The microphone grant is persisted per origin in the WebView2 profile, not checked on each recording.**
+>
+>- WebView2 saves the granted state in its **User Data Folder** (by default `<exe dir>\CustomCache`, i.e. the `EBWebView` profile; configurable — see `uWVFMXCoreInit.pas`), keyed by origin (`https://app.local`) + permission kind.
+>- After the first grant, WebView2 resolves subsequent requests **from that on-disk cache and no longer fires `DoPermissionRequested`**. The handler is therefore a **one-time gate per profile**, not a per-capture check.
+>- **Consequence:** disabling or removing `DoPermissionRequested` does **not** revoke an already-granted microphone permission — the grant survives in the profile. To actually revoke it, clear the WebView2 profile (delete `CustomCache` / its `EBWebView` permission store) or return `Set_State(COREWEBVIEW2_PERMISSION_STATE_DENY)` from the handler.
+>- This is standard per-origin permission persistence (the same behavior as Edge/Chrome remembering a site's choice), and it became effective only once the shell moved to a **stable, secure origin** — an opaque `NavigateToString` document has no stable origin to cache against.
+
+The grant remains scoped to `https://app.local` only, and navigation is locked to the allowed origins, so no remote or third-party page can run in this context to abuse the microphone. This design keeps Speech-to-Text available while keeping the WebView2 permission surface intentionally narrow.
 
 <br>
 
@@ -961,6 +1155,7 @@ Quick lookup by topic.
 | Read the last received message (DEV_MODE) | `<ExeName>-exchange-debug.json` |
 | Two-step deletion confirmation | `ConfirmationRequest` records, `DialogConfirmationResponse` executes |
 | Vendor service contract | [`IVendorServices`](#ivendorservices--llm-vendor) |
+| Render & persist a structured (tool / reasoning) turn | [`IPythiaDisplayBlockAggregator`](#ipythiadisplayblockaggregator--vendor-neutral-display-blocks) + `IPythiaBrowser.Display*` + `TManagedItemLLMResult.DisplayBlockResults` |
 
 <br>
 

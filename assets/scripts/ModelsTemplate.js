@@ -25,6 +25,8 @@
     imageCreation: I18N_NAMESPACE + ".categories.imageCreation.label",
     videoCreation: I18N_NAMESPACE + ".categories.videoCreation.label",
     audioCreation: I18N_NAMESPACE + ".categories.audioCreation.label",
+    speechToText: I18N_NAMESPACE + ".features.speechToText",
+    SpeechToText: I18N_NAMESPACE + ".features.speechToText",
     textToSpeech: I18N_NAMESPACE + ".categories.textToSpeech.label",
     deepResearch: I18N_NAMESPACE + ".categories.deepResearch.label"
   };
@@ -109,9 +111,18 @@
     {
       id: "textToSpeech",
       label: "Text to speech",
-      badge: "\uF12E",
+      badge: "\uE993",
       sourceCategoryId: "audio",
       featureLabels: ["Text to speech"],
+      model: "",
+      visible: true
+    },
+    {
+      id: "speechToText",
+      label: "Speech to text",
+      badge: "\uF47F",
+      sourceCategoryId: "audio",
+      featureLabels: ["Speech to text"],
       model: "",
       visible: true
     },
@@ -133,22 +144,32 @@
     return "";
   }
 
+  function normalizeAssignmentCategoryId(categoryId) {
+    const normalizedId = String(categoryId == null ? "" : categoryId).trim();
+
+    if (normalizedId.toLowerCase() === "speechtotext") {
+      return "speechToText";
+    }
+
+    return normalizedId;
+  }
+
   function getAssignmentCategoryId(item) {
     if (!item || typeof item !== "object") return "";
 
     if (item.id != null && String(item.id).trim()) {
-      return String(item.id).trim();
+      return normalizeAssignmentCategoryId(item.id);
     }
 
     if (item.type != null && String(item.type).trim()) {
-      return String(item.type).trim();
+      return normalizeAssignmentCategoryId(item.type);
     }
 
     return "";
   }
 
   function findDefaultAssignmentConfigItem(categoryId) {
-    const normalizedCategoryId = String(categoryId || "");
+    const normalizedCategoryId = normalizeAssignmentCategoryId(categoryId);
     let i;
 
     if (!normalizedCategoryId) return null;
@@ -235,6 +256,66 @@
     return item.id;
   });
 
+  function completeAssignmentConfig(items) {
+    const sourceItems = cloneAssignmentConfig(items);
+    const sourceById = sourceItems.reduce(function (acc, item) {
+      if (item && item.id) {
+        acc[item.id] = item;
+      }
+      return acc;
+    }, Object.create(null));
+    const result = DEFAULT_ASSIGNMENT_ORDER.map(function (categoryId) {
+      return sourceById[categoryId] || cloneAssignmentConfigItem(DEFAULT_ASSIGNMENT_CONFIG_BY_ID[categoryId]);
+    });
+    const seen = result.reduce(function (acc, item) {
+      if (item && item.id) {
+        acc[item.id] = true;
+      }
+      return acc;
+    }, Object.create(null));
+
+    sourceItems.forEach(function (item) {
+      if (!item || seen[item.id]) {
+        return;
+      }
+
+      seen[item.id] = true;
+      result.push(item);
+    });
+
+    return result;
+  }
+
+  function runtimeAssignmentConfigNeedsRefresh(items) {
+    const sourceItems = Array.isArray(items) ? items : [];
+    const normalizedItems = cloneAssignmentConfig(sourceItems);
+    const completedItems = completeAssignmentConfig(sourceItems);
+
+    for (let i = 0; i < sourceItems.length; i += 1) {
+      const source = sourceItems[i] && typeof sourceItems[i] === "object" ? sourceItems[i] : {};
+      const sourceId = source.id != null && String(source.id).trim()
+        ? String(source.id).trim()
+        : (source.type != null ? String(source.type).trim() : "");
+
+      if (sourceId && sourceId !== getAssignmentCategoryId(source)) {
+        return true;
+      }
+    }
+
+    if (normalizedItems.length !== completedItems.length) {
+      return true;
+    }
+
+    for (let i = 0; i < completedItems.length; i += 1) {
+      if (!normalizedItems[i] || normalizedItems[i].id !== completedItems[i].id) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+
   function createDefaultAssignmentsMap(items) {
     return (Array.isArray(items) ? items : []).reduce(function (acc, item) {
       if (!item || !item.id) return acc;
@@ -281,14 +362,58 @@
     }, Object.create(null));
   }
 
-  function normalizeModelsInput(items) {
+  function normalizeModelCategoryIds(categoryId, categoryIds) {
     const seen = Object.create(null);
+    const result = [];
+    const values = [];
 
-    return (Array.isArray(items) ? items : []).map(normalizeModelInput).filter(function (item) {
-      if (!item || !item.id || seen[item.id]) return false;
-      seen[item.id] = true;
-      return true;
+    if (categoryId != null && String(categoryId).trim()) {
+      values.push(categoryId);
+    }
+
+    if (Array.isArray(categoryIds)) {
+      values.push.apply(values, categoryIds);
+    }
+
+    values.forEach(function (value) {
+      const normalizedValue = normalizeAssignmentCategoryId(value);
+      if (!normalizedValue || seen[normalizedValue]) return;
+      seen[normalizedValue] = true;
+      result.push(normalizedValue);
     });
+
+    return result;
+  }
+
+  function normalizeModelsInput(items) {
+    const modelsById = Object.create(null);
+    const result = [];
+
+    (Array.isArray(items) ? items : []).map(normalizeModelInput).forEach(function (item) {
+      if (!item || !item.id) return;
+
+      const existing = modelsById[item.id];
+      if (!existing) {
+        modelsById[item.id] = item;
+        result.push(item);
+        return;
+      }
+
+      existing.categoryIds = normalizeModelCategoryIds(
+        existing.categoryId,
+        existing.categoryIds.concat(item.categoryIds)
+      );
+
+      if (!existing.categoryId && item.categoryId) {
+        existing.categoryId = item.categoryId;
+      }
+
+      if (!existing.sourceCategoryId && item.sourceCategoryId) {
+        existing.sourceCategoryId = item.sourceCategoryId;
+      }
+    });
+
+    return result;
   }
 
   function flattenLegacyModelsByCategory(modelsByCategory) {
@@ -394,8 +519,15 @@
     const nextAssignments = Object.create(null);
 
     getRuntimeAssignmentOrder().forEach(function (key) {
+      const legacyKey = key === "speechToText" ? "SpeechToText" : key;
+
       if (Object.prototype.hasOwnProperty.call(state.defaultAssignments, key)) {
         nextAssignments[key] = state.defaultAssignments[key];
+        return;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(state.defaultAssignments, legacyKey)) {
+        nextAssignments[key] = state.defaultAssignments[legacyKey];
         return;
       }
 
@@ -433,6 +565,11 @@
     getRuntimeAssignmentOrder().forEach(function (key) {
       if (Object.prototype.hasOwnProperty.call(assignments, key)) {
         state.defaultAssignments[key] = assignments[key] == null ? "" : String(assignments[key]);
+        return;
+      }
+
+      if (key === "speechToText" && Object.prototype.hasOwnProperty.call(assignments, "SpeechToText")) {
+        state.defaultAssignments[key] = assignments.SpeechToText == null ? "" : String(assignments.SpeechToText);
       }
     });
   }
@@ -451,7 +588,7 @@
   }
 
   function getCategoryConfig(categoryId) {
-    return runtimeAssignmentConfigById[categoryId] || null;
+    return runtimeAssignmentConfigById[normalizeAssignmentCategoryId(categoryId)] || null;
   }
 
   function isCategoryVisible(categoryId) {
@@ -466,7 +603,7 @@
   }
 
   function getCategoryLabelText(categoryId, fallbackLabel) {
-    const normalizedCategoryId = String(categoryId || "");
+    const normalizedCategoryId = normalizeAssignmentCategoryId(categoryId);
     const override = state.categoryLabelOverrides[normalizedCategoryId];
     const config = getCategoryConfig(normalizedCategoryId);
     const sourceLabel = fallbackLabel != null
@@ -555,10 +692,12 @@
 
   function normalizeModelInput(item) {
     const source = item && typeof item === "object" ? item : {};
+    const categoryId = source.categoryId == null ? "" : String(source.categoryId);
     const normalized = Object.assign({}, source, {
       id: String(source.id || source.modelId || ""),
       name: String(source.name || source.label || source.title || source.id || source.modelId || ""),
-      categoryId: source.categoryId == null ? "" : String(source.categoryId),
+      categoryId: categoryId,
+      categoryIds: normalizeModelCategoryIds(categoryId, source.categoryIds),
       sourceCategoryId: source.sourceCategoryId == null
         ? (source.sourceCategory == null
             ? (source.categoryId == null ? "" : String(source.categoryId))
@@ -602,6 +741,13 @@
     return state.models.slice();
   }
 
+  function modelBelongsToCategory(model, categoryId) {
+    const normalizedCategoryId = normalizeAssignmentCategoryId(categoryId);
+    if (!model || !normalizedCategoryId) return false;
+
+    return normalizeModelCategoryIds(model.categoryId, model.categoryIds).indexOf(normalizedCategoryId) !== -1;
+  }
+
   function modelSupportsAnyFeature(model, featureLabels) {
     const modelFeatures = getModelFeatureLabels(model);
     if (!featureLabels || !featureLabels.length || hasAllFeatures(featureLabels)) return true;
@@ -619,9 +765,9 @@
       return getAllModels();
     }
 
-    const normalizedCategoryId = String(categoryId || "");
+    const normalizedCategoryId = normalizeAssignmentCategoryId(categoryId);
     const directCategoryModels = state.models.filter(function (model) {
-      return !!model && String(model.categoryId || "") === normalizedCategoryId;
+      return modelBelongsToCategory(model, normalizedCategoryId);
     });
 
     if (directCategoryModels.length || !config.sourceCategoryId) {
@@ -800,7 +946,7 @@
   function buildReplaceVersionCategories() {
     const defaultAssignments = getDefaultAssignments();
 
-    return getRuntimeAssignmentConfig().map(function (item) {
+    return completeAssignmentConfig(getRuntimeAssignmentConfig()).map(function (item) {
       const categoryId = getAssignmentCategoryId(item);
       const assignedModelId = Object.prototype.hasOwnProperty.call(defaultAssignments, categoryId)
         ? defaultAssignments[categoryId]
@@ -867,7 +1013,7 @@
       return getRuntimeAssignmentConfig();
     }
 
-    const normalizedItems = cloneAssignmentConfig(items);
+    const normalizedItems = completeAssignmentConfig(items);
     const replace = !!(
       (options && options.replace === true) ||
       getRuntimeCategoryConfigMode(options && options.categoryConfigMode) === "replace"
@@ -897,7 +1043,7 @@
   }
 
   function setCategoryVisibility(categoryId, visible, emit) {
-    const normalizedCategoryId = String(categoryId || "");
+    const normalizedCategoryId = normalizeAssignmentCategoryId(categoryId);
     const config = getCategoryConfig(normalizedCategoryId);
 
     if (!config) return false;
@@ -1269,11 +1415,10 @@
         text-align: left;
         padding: 16px 18px;
         cursor: pointer;
-        transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+        transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
       }
 
       .msp-card:hover {
-        transform: translateY(-1px);
         background: color-mix(in srgb, var(--input-shell-bg-hover) 74%, transparent);
       }
 
@@ -1708,6 +1853,10 @@
 
   function setRuntimeConfiguration(payload) {
     const runtimePayload = normalizeRuntimeConfigurationPayload(payload);
+    const refreshReplaceVersion =
+      runtimePayload.categoryConfigMode === "replace" &&
+      runtimeAssignmentConfigNeedsRefresh(runtimePayload.categories);
+    const activeCategoryId = normalizeAssignmentCategoryId(runtimePayload.activeCategoryId);
 
     state.categoryLabelOverrides = Object.create(null);
     setRuntimeAssignmentConfig(runtimePayload.categories, {
@@ -1725,11 +1874,11 @@
     }
 
     if (
-      runtimePayload.activeCategoryId &&
-      isCategoryVisible(runtimePayload.activeCategoryId) &&
-      state.categories.some(function (item) { return item.id === runtimePayload.activeCategoryId; })
+      activeCategoryId &&
+      isCategoryVisible(activeCategoryId) &&
+      state.categories.some(function (item) { return item.id === activeCategoryId; })
     ) {
-      state.activeCategoryId = runtimePayload.activeCategoryId;
+      state.activeCategoryId = activeCategoryId;
     } else {
       ensureActiveCategoryStillValid();
     }
@@ -1737,6 +1886,10 @@
     state.selectedModelId = runtimePayload.selectedModelId;
     applyDefaultAssignmentsInput(runtimePayload.defaultAssignments);
     syncDerivedState();
+
+    if (refreshReplaceVersion) {
+      emitReplaceVersion();
+    }
 
     return getState();
   }

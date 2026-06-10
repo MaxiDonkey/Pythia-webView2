@@ -435,6 +435,7 @@
     "image_creation_aborted_error": "既定のモデルが設定されていません:画像作成が中止されました",
     "video_creation_aborted_error": "既定のモデルが設定されていません:動画作成が中止されました",
     "audio_creation_aborted_error": "既定のモデルが設定されていません:音声作成が中止されました",
+    "stt_operation_aborted_error": "既定のモデルが設定されていません:STT 操作が中止されました",
     "tts_operation_aborted_error": "既定のモデルが設定されていません:TTS 操作が中止されました",
     "deep_research_operation_aborted_error": "既定のモデルが設定されていません:詳細調査が中止されました",
     "missing_default_models_error": "一部のカテゴリで既定のモデルが不足しています。#10 モデル設定を確認してください",

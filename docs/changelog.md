@@ -1,9 +1,30 @@
+#### 2026 June 9 - version 0.9.6
+
+- **New OpenAI showcase demo (`FMX_OpenAI`):** First FMX demo wiring **Pythia-Webview2** to OpenAI through the `DelphiGenAI` SDK (`dependencies\DelphiGenAI`, Responses API, async/await). It ports the `VCL_Anthropic` teaching scenarios to the OpenAI ecosystem — function/MCP/skill/agent cards, image creation and editing (Images API: generations and edits), plus the new file upload, knowledge indexing (RAG) and Whisper transcription services — and ships its own walkthrough in [`demos/FMX/pythia-openai/README.md`](../demos/FMX/pythia-openai/README.md).
+
+- **Vendor file upload service (`IFileUploadService`):** Optional service on `IPythiaBrowser.FileUploadService` (VCL + FMX) that uploads attached files to a remote Files API and references them by `file_id` instead of inlining their bytes. OpenAI demo: `TDownloadService`.
+
+- **Vendor knowledge indexing service (`IKnowledgeIndexingService`):** Optional service on `IPythiaBrowser.KnowledgeIndexingService` (VCL + FMX) that indexes `Knowledge` attachments into a vector store (upload → embed → ready) for retrieval (RAG), exposing the index reference at submit time. OpenAI demo: `TOpenAIKnowledgeIndexingService`.
+
+- **Vendor audio transcription service (`IAudioTranscriptionService`) + built-in microphone capture:** Optional service on `IPythiaBrowser.AudioTranscriptionService` (VCL + FMX). Pythia records the mic browser-side (`AudioRecordingTemplate.js`, `webm/opus`) and hands the file to the vendor for speech-to-text; the recognized text is inserted at the caret. Registering the service reveals the mic button (red while recording, send locked during capture). OpenAI demo: `TOpenAITranscriptionService` (Whisper).
+
+- Fixed focus recovery after dragging and dropping files onto the UI: the host application is now brought back to the foreground and keyboard focus is correctly restored to the prompt in both VCL and FMX.
+
+- Added the `OnNewChatRequested` event to the VCL and FMX components, exposed through the shared interface, to notify the host application when a new blank chat is requested from the WebView2 UI.
+
+- Added structured handling for long text pasted into the input bubble. Oversized pasted content is now represented in the prompt by a placeholder, attached as a temporary file, then expanded on the Delphi side before processing. Files consumed as prompt fragments are removed from vendor attachments to avoid duplicated content.
+
+- Added and correctly enabled the Speech to text model category in Pythia.
+  - The JS model selector now handles `speechToText` as a dedicated category, normalizes legacy identifiers, and completes incomplete persisted category configurations. The default model JSON also includes a `speechToText` sample entry so vendors can explicitly declare transcription models. Delphi category indexes were aligned to validate and forward the STT model correctly through the orchestration flow.
+
+<br>
+
 #### 2026 May 27 - version 0.9.5
 
 - Agents - Anthropic demo
-  - **Pre-installed managed agent cards** (bin64\VCL_Anthropic\support\VCL_Anthropic-agent-cards.json): Added five ready-to-use cards for the agent selector — three defined inline in JSON (Research Analyst: single-agent claude-opus-4-7 with web_search/web_fetch always allowed; Local Project Review: coordinator + sub-agent code-inspector read-only on the uploaded local project; Supervised Exploration: coordinator + sub-agent explorer with confirmation on each tool) and two referenced by md_path (Safe Code Patch and Sandbox To Local Code Edit, see below).
+  - **Pre-installed managed agent cards** [VCL_Anthropic-agent-cards.json](../bin64/VCL_Anthropic/support/VCL_Anthropic-agent-cards.json): Added five ready-to-use cards for the agent selector — three defined inline in JSON (Research Analyst: single-agent claude-opus-4-7 with web_search/web_fetch always allowed; Local Project Review: coordinator + sub-agent code-inspector read-only on the uploaded local project; Supervised Exploration: coordinator + sub-agent explorer with confirmation on each tool) and two referenced by md_path (Safe Code Patch and Sandbox To Local Code Edit, see below).
 
-  - **Markdown agent definitions** (bin64\VCL_Anthropic\safe-code-patch-agent.md, sandbox-to-local-code-edit-agent.md): First externalized maps in YAML-frontmatter + Markdown format (loaded by Demo.Anthropic.Agent.Markdown) describing multi-agent coordinators controlling two sub-agents code-locator + patch-author / sandbox-editor; Safe Code Patch produces a unified diff reread for a small modification of the local project, Sandbox To Local Code Edit edits the uploaded sandbox copy and returns a manifest PYTHIA_LOCAL_APPLY_MANIFEST + diff intended to be applied locally by Pythia via the Demo.Anthropic.Agent.LocalApply mechanism.
+  - **Markdown agent definitions** [safe-code-patch-agent.md](../bin64/VCL_Anthropic/safe-code-patch-agent.md), [sandbox-to-local-code-edit-agent.md](../bin64/VCL_Anthropic/sandbox-to-local-code-edit-agent.md): First externalized maps in YAML-frontmatter + Markdown format (loaded by Demo.Anthropic.Agent.Markdown) describing multi-agent coordinators controlling two sub-agents code-locator + patch-author / sandbox-editor; Safe Code Patch produces a unified diff reread for a small modification of the local project, Sandbox To Local Code Edit edits the uploaded sandbox copy and returns a manifest PYTHIA_LOCAL_APPLY_MANIFEST + diff intended to be applied locally by Pythia via the Demo.Anthropic.Agent.LocalApply mechanism.
 
   - **Agent definition (Agent.Cards, Agent.Markdown, Agent.Fingerprint):** Typed model of agent cards (single or multi-agent with coordinator + sub-agents, built-in tools and always_allow / always_ask policies), loader from Markdown files to YAML frontmatter, and canonical fingerprint serving as cache key for provisioning.
 
@@ -158,3 +179,4 @@ Added a selection guard in `ChatSessionSelection` to prevent the currently activ
 Fixed the layout between the main DOM area and the input bubble: the space occupied by the bubble at the bottom of the screen is now dynamically reserved, preventing content from appearing underneath it.
 
 The DOM area remains in the normal page flow with the global WebView2 scroll. The bubble stays vertically centered when empty, moves correctly to the bottom once a conversation exists, and the layout remains responsive on window resize.
+

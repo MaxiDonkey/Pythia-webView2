@@ -435,6 +435,7 @@
     "image_creation_aborted_error": "未配置默认模型:图像创建已中止",
     "video_creation_aborted_error": "未配置默认模型:视频创建已中止",
     "audio_creation_aborted_error": "未配置默认模型:音频创建已中止",
+    "stt_operation_aborted_error": "未配置默认模型:STT 操作已中止",
     "tts_operation_aborted_error": "未配置默认模型:TTS 操作已中止",
     "deep_research_operation_aborted_error": "未配置默认模型:深度研究操作已中止",
     "missing_default_models_error": "某些类别缺少默认模型。#10 请检查模型设置",

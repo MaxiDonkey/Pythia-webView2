@@ -115,7 +115,7 @@ type
     CreateImage: Boolean;
     CreateVideo: Boolean;
     CreateAudio: Boolean;
-    SpeechToText: TArray<TListItemData>;
+    SpeechToText: TArray<TMediaItemData>;
     TextToSpeech: Boolean;
 
     class function FromClass(const AValue: TMedia): TMediaData; static;
@@ -414,7 +414,7 @@ begin
   Result.CreateImage := AValue.CreateImage;
   Result.CreateVideo := AValue.CreateVideo;
   Result.CreateAudio := AValue.CreateAudio;
-  Result.SpeechToText := TListItemData.FromArray(AValue.SpeechToText);
+  Result.SpeechToText := TMediaItemData.FromArray(AValue.SpeechToText);
   Result.TextToSpeech := AValue.TextToSpeech;
 end;
 

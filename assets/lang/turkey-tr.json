@@ -435,6 +435,7 @@
     "image_creation_aborted_error": "Varsayılan model yapılandırılmadı: görsel oluşturma iptal edildi",
     "video_creation_aborted_error": "Varsayılan model yapılandırılmadı: video oluşturma iptal edildi",
     "audio_creation_aborted_error": "Varsayılan model yapılandırılmadı: ses oluşturma iptal edildi",
+    "stt_operation_aborted_error": "Varsayılan model yapılandırılmadı: STT işlemi iptal edildi",
     "tts_operation_aborted_error": "Varsayılan model yapılandırılmadı: TTS işlemi iptal edildi",
     "deep_research_operation_aborted_error": "Varsayılan model yapılandırılmadı: derinlemesine araştırma iptal edildi",
     "missing_default_models_error": "Bazı kategoriler için varsayılan modeller eksik. #10 Model ayarlarını kontrol edin",

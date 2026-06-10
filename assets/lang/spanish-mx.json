@@ -435,6 +435,7 @@
     "image_creation_aborted_error": "Sin modelo predeterminado configurado: creación de imagen interrumpida",
     "video_creation_aborted_error": "Sin modelo predeterminado configurado: creación de video interrumpida",
     "audio_creation_aborted_error": "Sin modelo predeterminado configurado: creación de audio interrumpida",
+    "stt_operation_aborted_error": "Sin modelo predeterminado configurado: operación STT interrumpida",
     "tts_operation_aborted_error": "Sin modelo predeterminado configurado: operación TTS interrumpida",
     "deep_research_operation_aborted_error": "Sin modelo predeterminado configurado: investigación profunda interrumpida",
     "missing_default_models_error": "Faltan modelos predeterminados para algunas categorías. #10 Revisa la configuración de los modelos",

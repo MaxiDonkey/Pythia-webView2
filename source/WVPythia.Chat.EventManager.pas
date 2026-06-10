@@ -354,6 +354,7 @@ begin
   FDispatch[TBrowserChatEvent.PasteFromClipboard] := PasteFromClipboardEvent;
   FDispatch[TBrowserChatEvent.FolderSelection] := FolderSelectionEvent;
   FDispatch[TBrowserChatEvent.FolderState] := FolderStateEvent;
+  FDispatch[TBrowserChatEvent.AudioRecord] := AudioRecordEvent;
 end;
 
 procedure TBrowserEventManager.SetBrowser(const Value: IPythiaBrowser);

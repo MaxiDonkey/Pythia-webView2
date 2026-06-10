@@ -842,6 +842,8 @@ Pythia.Capabilities
  .IntegrationFunction(True)
  .Media(False)
  .DeepResearch(False)
+ .Model(True)
+ .Project(True)
  .Update;
 ```
 
@@ -865,7 +867,8 @@ Example:
   "deepResearch": false,
   "integration": true,
   "integrationFunction": true,
-  "model": true
+  "model": true,
+  "project": true
 }
 ```
 
@@ -886,6 +889,7 @@ The exact catalog is described in the main documentation. Common groups include:
 | `Media*` | Control image, audio, and video generation surfaces. |
 | `WebSearch` and `DeepResearch` | Toggle research-oriented tools. |
 | `Model` | Show or hide the model selector. |
+| `Project` | Show or hide the project folder surface: register one or more folders where projects are installed and pick a default project for the session. |
 
 ### Checkpoint
 
@@ -1014,30 +1018,54 @@ Example:
   "type": "model-selector-set-data",
   "models": [
     {
-      "id": "anthropic-sonnet-example",
-      "label": "Claude Sonnet",
+      "id": "text-generation-example",
+      "label": "One of text generation model",
       "capabilityLabels": ["Thinking", "Vision"],
       "categoryId": "textGeneration"
     },
     {
-      "id": "image-model-example",
-      "label": "Image Model",
-      "capabilityLabels": ["Create Image", "Vision"],
+      "id": "image-creation-example",
+      "label": "One of image creation model",
+      "capabilityLabels": ["Create Image"],
       "categoryId": "imageCreation"
     },
     {
-      "id": "deep-research-model-example",
-      "label": "Deep Research Model",
+      "id": "video-creation-example",
+      "label": "One of video creation model",
+      "capabilityLabels": ["Create Video"],
+      "categoryId": "videoCreation"
+    },
+    {
+      "id": "audio-creation-example",
+      "label": "One of audio creation model",
+      "capabilityLabels": ["Create Audio", "Text to speech"],
+      "categoryId": "audioCreation"
+    },
+    {
+      "id": "text-to-speech-example",
+      "label": "One of text to speech model",
+      "capabilityLabels": ["Text to speech"],
+      "categoryId": "textToSpeech"
+    },
+    {
+      "id": "speech-to-text-example",
+      "label": "One of speech to text model",
+      "capabilityLabels": ["Speech to text"],
+      "categoryId": "speechToText"
+    },
+    {
+      "id": "deep-research-example",
+      "label": "One of deep research model",
       "capabilityLabels": ["Deep Research"],
       "categoryId": "deepResearch"
     }
   ],
-  "activeCategoryId": "textGeneration",
-  "selectedModelId": "anthropic-sonnet-example"
+  "activeCategoryId": "allModels",
+  "selectedModelId": ""
 }
 ```
 
-Replace the example `id` values with the exact model identifiers expected by your vendor implementation.
+This mirrors the default model list generated on first launch, which seeds one entry per category: `textGeneration`, `imageCreation`, `videoCreation`, `audioCreation`, `textToSpeech`, `speechToText`, and `deepResearch`. Replace the example `id` values with the exact model identifiers expected by your vendor implementation.
 
 Field meaning:
 
@@ -1090,7 +1118,7 @@ Example:
         "Web research",
         "Vision"
       ],
-      "model": "anthropic-sonnet-example",
+      "model": "text-generation-example",
       "visible": true
     },
     {
@@ -1102,26 +1130,65 @@ Example:
         "Create Image",
         "Vision"
       ],
-      "model": "",
+      "model": "image-creation-example",
       "visible": true
     },
     {
       "id": "videoCreation",
       "label": "Video Creation",
-      "sourceCategoryId": "video",
+      "badge": "",
+      "sourceCategoryId": "image",
       "featureLabels": ["Create Video"],
       "model": "",
       "visible": false
+    },
+    {
+      "id": "audioCreation",
+      "label": "Audio creation",
+      "badge": "",
+      "sourceCategoryId": "audio",
+      "featureLabels": ["Create Audio"],
+      "model": "audio-creation-example",
+      "visible": false
+    },
+    {
+      "id": "textToSpeech",
+      "label": "Text to speech",
+      "badge": "",
+      "sourceCategoryId": "audio",
+      "featureLabels": ["Text to speech"],
+      "model": "text-to-speech-example",
+      "visible": true
+    },
+    {
+      "id": "speechToText",
+      "label": "Speech to text",
+      "badge": "",
+      "sourceCategoryId": "audio",
+      "featureLabels": ["Speech to text"],
+      "model": "speech-to-text-example",
+      "visible": true
+    },
+    {
+      "id": "deepResearch",
+      "label": "Deep Research",
+      "badge": "",
+      "sourceCategoryId": "deepResearch",
+      "featureLabels": ["Deep Research"],
+      "model": "deep-research-example",
+      "visible": true
     }
   ],
   "type": "model-selector-set-runtime-config"
 }
 ```
 
+This mirrors the runtime category configuration of a real project: one entry per category (`allModels`, `textGeneration`, `imageCreation`, `videoCreation`, `audioCreation`, `textToSpeech`, `speechToText`, `deepResearch`), each linked to a source category, with its own `model` default and `visible` flag.
+
 The important field is:
 
 ```json
-"model": "anthropic-sonnet-example"
+"model": "text-generation-example"
 ```
 
 It defines the default model for that category. The value must match the `id` of a model declared in `<exeName>-model-list.json`.
@@ -1151,6 +1218,7 @@ No default model configured: Image creation aborted
 No default model configured: Video creation aborted
 No default model configured: Audio creation aborted
 No default model configured: TTS operation aborted
+No default model configured: STT operation aborted
 No default model configured: Deep Research operation aborted
 ```
 
@@ -1192,7 +1260,7 @@ The user-side procedure is:
 
 1. open the model configuration panel;
 2. look for categories marked as not assigned, usually with a red dot;
-3. select the relevant category, such as Text Generation, Image Creation, Video Creation, Audio Creation, Text to Speech, or Deep Research;
+3. select the relevant category, such as Text Generation, Image Creation, Video Creation, Audio Creation, Text to Speech, Speech to Text, or Deep Research;
 4. choose one of the compatible models from the filtered list;
 5. retry the operation.
 

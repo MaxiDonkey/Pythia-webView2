@@ -8,7 +8,8 @@ const
   VIDEO_CREATION_INDEX = 3;
   AUDIO_CREATION_INDEX = 4;
   TEXT_TO_SPEECH_INDEX = 5;
-  DEEP_RESEARCH_INDEX = 6;
+  SPEECH_TO_TEXT_INDEX = 6;
+  DEEP_RESEARCH_INDEX = 7;
 
   PROP_EVENT = 'event';
   PROP_ID = 'id';
@@ -26,9 +27,15 @@ const
   PROP_DIRECTION = 'direction';
   PROP_FILENAME = 'fileName';
   PROP_STATE = 'state';
+  PROP_FILES = 'files';
+  PROP_FULLPATH = 'fullPath';
+  PROP_PROMPT_FRAGMENTS = 'promptFragments';
+  PROP_PLACEHOLDER = 'placeholder';
   PROP_LAST_INDEX = 'lastId';
   PROP_INTERNAL = 'internal';
   PROP_TYPE = 'type';
+  PROP_DATA = 'data';
+  PROP_ERROR = 'error';
   PROP_OUTPUT_STRUCTURED_ENABLED = 'requestParams.structuredOutput.enabled';
   PROP_OUTPUT_STRUCTURED_SCHEMA = 'requestParams.structuredOutput.jsonSchema';
 
@@ -116,6 +123,9 @@ const
 
   INPUT_BUBBLE_RESET_TEMPLATE =
     'window.resetInputBubble();';
+
+  INPUT_BUBBLE_INSERT_TEXT_TEMPLATE =
+    'window.insertInputBubbleText(%s);';
 
   SCROLL_AFTER_END_SCRIPT_TEMPLATE =
     '(function(){' +
@@ -293,6 +303,9 @@ const
   FILES_SELECTION_TEMPLATE =
     'window.onFileSelected(%s,%s)';
 
+  PASTE_FRAGMENT_SELECTION_TEMPLATE =
+    'window.onPasteFragmentSelected(%s,%d,%d)';
+
   RENDER_BATCH_BEGIN_UPDATE =
     'window.ResponseRenderBatch.begin();';
 
@@ -333,6 +346,15 @@ const
            JSON
      --------------------
   *)
+
+  AUDIO_RECORDING_START =
+    '{"type":"audio-recording-start"}';
+
+  AUDIO_RECORDING_STOP =
+    '{"type":"audio-recording-stop"}';
+
+  AUDIO_RECORDING_SWITCH =
+    '{"type":"audio-recording-switch"}';
 
   AUDIO_BUTTON_ENABLE =
     '{"type": "setInputButtonsVisibility","audio":%s}';
@@ -484,7 +506,13 @@ const
     '      "categoryId": "textToSpeech"' + sLineBreak +
     '    },' + sLineBreak +
     '    {' + sLineBreak +
-    '      "id": "ID6",' + sLineBreak +
+    '      "id": "ID7",' + sLineBreak +
+    '      "label": "One of speech to text model   <- to define",' + sLineBreak +
+    '      "capabilityLabels": ["Speech to text"],' + sLineBreak +
+    '      "categoryId": "speechToText"' + sLineBreak +
+    '    },' + sLineBreak +
+    '    {' + sLineBreak +
+    '      "id": "ID8",' + sLineBreak +
     '      "label": "One of deep research model   <- to define",' + sLineBreak +
     '      "capabilityLabels": ["Deep Research"],' + sLineBreak +
     '      "categoryId": "deepResearch"' + sLineBreak +

@@ -1,5 +1,5 @@
 # Pythia-Webview2 for Delphi
-![Version](https://img.shields.io/badge/version-0.9-blue)
+![Version](https://img.shields.io/badge/version-0.9.x-blue)
 ![Status](https://img.shields.io/badge/status-first%20public%20release-2ea44f)
 ![Delphi](https://img.shields.io/badge/Delphi-11%2F12%2F13-ffffba)
 ![Platform](https://img.shields.io/badge/platform-Windows%20only-0078D4?logo=windows&logoColor=white)
@@ -15,7 +15,7 @@
 > In practice, this means the component targets **Windows desktop applications**.
 
 ## NEW
-- [Managed Agents walkthrough (part 1)](demos/VCL/pythia-anthropic/Agent-sample-doc.md#discovering-the-agent-cards)
+- [OpenAI showcase demo (`FMX_OpenAI`)](demos/FMX/pythia-openai/README.md) — the Anthropic teaching scenarios ported to the OpenAI ecosystem (GenAI SDK, Responses API), built with FMX
 
 ## Table of Contents
 
@@ -177,7 +177,7 @@ Your Delphi code handles the execution semantics.
 
 ## Demos
 
-The repository ships seven runnable demos, grouped into three families.
+The repository ships eight runnable demos, grouped into three families.
 
 ### Starter projects
 
@@ -193,9 +193,8 @@ Minimal hosts to copy when starting a new application — no vendor wired, no pl
 |Project|Folder|Documentation|
 |-|-|-|
 |`PythiaSampleVCL`|[`demos/VCL/pythia-sample`](demos/VCL/pythia-sample)|[Discovery walkthrough](docs/PythiaSampleVCL.md) — UI tour and component capabilities|
-|`VCL_Anthropic`|[`demos/VCL/pythia-anthropic`](demos/VCL/pythia-anthropic)|[Anthropic vendor integration](docs/VCL_Anthropic.md) — connects **Pythia-Webview2** to a real LLM via the Delphi Anthropic SDK with native async/await support|
-
-[NEW]: **Managed Agents walkthrough (part 1).** Tour of the five agent cards pre-installed in `VCL_Anthropic`, taken in order — from a single web-research agent to a multi-agent flow that edits a sandbox copy and applies the diff to the local folder after user confirmation. A second part will follow with advanced agent usage — MCP servers, skills, Vault and memories integrated inside an agent card. See [`Agent-sample-doc.md`](demos/VCL/pythia-anthropic/Agent-sample-doc.md#discovering-the-agent-cards).
+|`VCL_Anthropic`|[`demos/VCL/pythia-anthropic`](demos/VCL/pythia-anthropic)|[Anthropic vendor integration](docs/VCL_Anthropic.md) — connects **Pythia-Webview2** to a real LLM via the Delphi Anthropic SDK with native async/await support<br>Managed Agents walkthrough (part 1) — [Agents examples](demos/VCL/pythia-anthropic/README.md#discovering-the-agent-cards)|
+|`FMX_OpenAI`|[`demos/FMX/pythia-openai`](demos/FMX/pythia-openai)|[OpenAI vendor integration](docs/FMX_OpenAI.md) — connects **Pythia-Webview2** to a real LLM via the Delphi GenAI SDK (OpenAI) with native async/await support<br>Agent cards walkthrough (part 1) — [Agents examples](demos/FMX/pythia-openai/README.md#discovering-the-agent-cards)|
 
 ### Plugin demos
 
@@ -232,7 +231,7 @@ For a first exploration:
 2. Run `PythiaSampleVCL` to discover the chat surface and the component's capabilities.
 3. Open one of the starter projects (`NewVCLproject` or `NewFMXproject`) to see a minimal host.
 4. Read the integrator guide.
-5. Study `VCL_Anthropic` to see how **Pythia-Webview2** connects to a real LLM SDK.
+5. Study `VCL_Anthropic` (Anthropic SDK) and `FMX_OpenAI` (GenAI SDK for OpenAI, built with FMX) to see how **Pythia-Webview2** connects to a real LLM SDK.
 6. Explore the plugin demos (`/snippet`, `/git`, `/grep`) to understand the command layer and the JS↔Delphi bridge.
 7. Use the technical reference for interfaces, events, JSON formats, and template details.
 
@@ -254,8 +253,12 @@ For a first exploration:
 |Slash commands|Available|Plugin-based command layer, with built-in API key commands|
 |API key management|Available|Logical names, local secret storage, and update notifications|
 |Card system|Available|Functions, MCP, skills, agents, and custom cards|
+|Project management|Available|Register one or more local project folders and select a default project for the session|
 |Files and attachments|Available|Images, documents, knowledge files, and transcription-related entries|
+|Remote file upload|Available|Optional vendor seam to offload attachments to a remote Files API and reference them by `file_id` instead of inlining their bytes|
+|Knowledge indexing (RAG)|Available|Knowledge files indexed into a vector store (upload → embed → ready) for retrieval-augmented generation|
 |Media rendering|Available|Images, audio, video, and files returned by vendor services|
+|Audio input (transcription)|Available|Built-in microphone capture with vendor speech-to-text; recognized text inserted at the caret|
 |Internationalization|Available|Dictionary loading and translation hooks|
 |Theme and look & feel|Available|UI templates and synchronization hooks with the host application|
 |Custom JavaScript templates|Available|Replaceable or extensible UI fragments|

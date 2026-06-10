@@ -119,6 +119,7 @@ type
     FHost: IWVFMXHost;
     FBrowser: TWVFMXBrowser;
     FWindowParent: TLayout;
+    FHostForm: TForm;
     FTimer: TTimer;
     FDefaultLangage: Boolean;
     function GetLocalHost: string;
@@ -430,11 +431,15 @@ type
   protected
     FOnChatSessionAutoRename: TProc<string, string>;
     FOnAfterSessionReloaded: TProc<string>;
+    FOnNewChatRequested: TProc;
     function GetOnChatSessionAutoRename: TProc<string, string>;
     procedure SetOnChatSessionAutoRename(const Value: TProc<string, string>);
 
     function GetOnAfterSessionReloaded: TProc<string>;
     procedure SetOnAfterSessionReloaded(const Value: TProc<string>);
+
+    function GetOnNewChatRequested: TProc;
+    procedure SetOnNewChatRequested(const Value: TProc);
 
     function ChatSessionDrawerOpen: Boolean;
     function ChatSessionDrawerClose: Boolean;
@@ -482,6 +487,7 @@ type
     function BubbleInputMenuOpen: Boolean;
     function BubbleInputClear: Boolean;
     function BubbleInputSetText(const Value: string): Boolean;
+    function BubbleInputInsertText(const Value: string): Boolean;
     function BubbleInputWelcome(const Value: string): Boolean; override;
   end;
 
@@ -532,9 +538,12 @@ type
   TFMXPythiaKnowledgeIndexingManager = class(TFMXPythiaFileUploadManager)
   private
     FKnowledgeIndexingService: IKnowledgeIndexingService;
+    FAudioTranscriptionService: IAudioTranscriptionService;
   protected
     function GetKnowledgeIndexingService: IKnowledgeIndexingService;
     procedure SetKnowledgeIndexingService(const Value: IKnowledgeIndexingService);
+    function GetAudioTranscriptionService: IAudioTranscriptionService;
+    procedure SetAudioTranscriptionService(const Value: IAudioTranscriptionService);
     function RecomputeSendButtonAvailability: Boolean;
   end;
 
@@ -585,6 +594,9 @@ type
     function Confirmation(const Value, Goal, Tag: string; const Index: Integer): Boolean;
     function DisplayChatSession: Boolean;
     procedure StopMedia;
+    procedure AudioRecordingStart;
+    procedure AudioRecordingStop;
+    procedure AudioRecordingSwitch;
     function UpdateFileDrawer: Boolean;
 
   public
@@ -598,6 +610,7 @@ type
 
     procedure Clear;
     procedure SetFocus;
+    procedure BringHostToFront;
     procedure BeginUpdate;
     procedure EndUpdate;
 
@@ -763,6 +776,9 @@ type
     /// Use it to restore any session-derived UI state (e.g. managed-agent chip).</summary>
     property OnAfterSessionReloaded: TProc<string> read GetOnAfterSessionReloaded write SetOnAfterSessionReloaded;
 
+    /// <summary>Occurs when the user requests a new blank chat from the browser UI.</summary>
+    property OnNewChatRequested: TProc read GetOnNewChatRequested write SetOnNewChatRequested;
+
     /// <summary>Allows the host to register custom command plugins during browser initialization.</summary>
     property OnRegisterCommandPlugins: TProc read FOnRegisterCommandPlugins write FOnRegisterCommandPlugins;
 
@@ -793,6 +809,17 @@ type
     /// </summary>
     property KnowledgeIndexingService: IKnowledgeIndexingService
       read GetKnowledgeIndexingService write SetKnowledgeIndexingService;
+
+    /// <summary>
+    /// Optional service invoked when a microphone capture file is ready
+    /// (produced browser-side through the recorder). When assigned, the
+    /// audio file is routed through <c>SubmitForTranscription</c> so the host
+    /// can perform speech-to-text asynchronously; Pythia then places the
+    /// recognized text into the input bubble. Producing the capture stays
+    /// vendor-agnostic, only the transcription step is delegated.
+    /// </summary>
+    property AudioTranscriptionService: IAudioTranscriptionService
+      read GetAudioTranscriptionService write SetAudioTranscriptionService;
 
     /// <summary>
     /// Occurs after the browser, bridge, settings, model list, capabilities,
@@ -1105,6 +1132,74 @@ begin
   {--- Group a sequence of DOM updates into a single render batch. }
   if not ExecuteScript(RENDER_BATCH_BEGIN_UPDATE) then
     raise EFMXPythiaException.Create(S_BATCH_BEGIN_ERROR);
+end;
+
+procedure TInterfacedFMXPythia.BringHostToFront;
+begin
+  var HostForm := FHostForm;
+  var HostHandle: HWND;
+  var ForegroundHandle: HWND;
+  var CurrentThreadId: DWORD;
+  var ForegroundThreadId: DWORD;
+  var AttachedToForegroundThread: Boolean;
+
+  if not Assigned(HostForm) and
+     Assigned(FWindowParent) and
+     Assigned(FWindowParent.Root) and
+     (FWindowParent.Root.GetObject is TForm) then
+    HostForm := TForm(FWindowParent.Root.GetObject);
+
+  if not Assigned(HostForm) then
+    Exit;
+
+  HostHandle := FmxHandleToHWND(HostForm.Handle);
+  if HostHandle = 0 then
+    Exit;
+
+  if HostForm.WindowState = TWindowState.wsMinimized then
+    HostForm.WindowState := TWindowState.wsNormal;
+
+  if not HostForm.Visible then
+    HostForm.Visible := True;
+
+  if IsIconic(HostHandle) then
+    ShowWindow(HostHandle, SW_RESTORE)
+  else
+    ShowWindow(HostHandle, SW_SHOW);
+
+  SetWindowPos(
+    HostHandle,
+    HWND_TOP,
+    0,
+    0,
+    0,
+    0,
+    SWP_NOMOVE or SWP_NOSIZE or SWP_SHOWWINDOW
+  );
+
+  ForegroundHandle := GetForegroundWindow;
+  CurrentThreadId := GetCurrentThreadId;
+  ForegroundThreadId := 0;
+
+  if ForegroundHandle <> 0 then
+    ForegroundThreadId := GetWindowThreadProcessId(ForegroundHandle, nil);
+
+  AttachedToForegroundThread :=
+    (ForegroundThreadId <> 0) and
+    (ForegroundThreadId <> CurrentThreadId) and
+    AttachThreadInput(CurrentThreadId, ForegroundThreadId, True);
+
+  try
+    BringWindowToTop(HostHandle);
+    SetActiveWindow(HostHandle);
+    Winapi.Windows.SetFocus(HostHandle);
+    SetForegroundWindow(HostHandle);
+  finally
+    if AttachedToForegroundThread then
+      AttachThreadInput(CurrentThreadId, ForegroundThreadId, False);
+  end;
+
+  HostForm.BringToFront;
 end;
 
 procedure TInterfacedFMXPythia.Clear;
@@ -1886,6 +1981,16 @@ end;
 
 procedure TInterfacedFMXPythia.SetFocus;
 begin
+  if Assigned(FHost) then
+    begin
+      var BrowserParentHandle := FHost.GetBrowserParentHandle;
+      if BrowserParentHandle <> 0 then
+        Winapi.Windows.SetFocus(BrowserParentHandle);
+    end;
+
+  if Assigned(FBrowser) then
+    FBrowser.SetFocus;
+
   if not PostWebMessageAsJson(SET_INPUT_BUBBLE_FOCUS, 'input-bubble-setfocus') then
     raise EFMXPythiaException.Create(S_FOCUS_ERROR);
 end;
@@ -1912,6 +2017,29 @@ begin
     raise EFMXPythiaException.Create(S_STOP_AUDIO_MEDIA_ERROR);
 end;
 
+procedure TInterfacedFMXPythia.AudioRecordingStart;
+begin
+  {--- Ask the browser-side recorder to begin capturing the microphone.
+       The encoded audio is later returned through the "audio-record" event. }
+  if not PostWebMessageAsJson(AUDIO_RECORDING_START) then
+    raise EFMXPythiaException.Create(S_AUDIO_RECORDING_START_ERROR);
+end;
+
+procedure TInterfacedFMXPythia.AudioRecordingStop;
+begin
+  {--- Ask the browser-side recorder to finalize the capture. }
+  if not PostWebMessageAsJson(AUDIO_RECORDING_STOP) then
+    raise EFMXPythiaException.Create(S_AUDIO_RECORDING_STOP_ERROR);
+end;
+
+procedure TInterfacedFMXPythia.AudioRecordingSwitch;
+begin
+  {--- Toggle the browser-side recorder; the browser decides start vs stop
+       based on its live state, keeping the host free of recording state. }
+  if not PostWebMessageAsJson(AUDIO_RECORDING_SWITCH) then
+    raise EFMXPythiaException.Create(S_AUDIO_RECORDING_SWITCH_ERROR);
+end;
+
 procedure TInterfacedFMXPythia.StopMedia;
 begin
   StopAudio;
@@ -1928,6 +2056,7 @@ end;
 
 procedure TFMXPythiaCore.AttachHost(AForm: TForm);
 begin
+  FHostForm := AForm;
   FHost.Initialize(AForm, FWindowParent);
   FWindowParent.OnResize := DoLayoutResize;
 end;
@@ -2014,7 +2143,7 @@ begin
   if FBrowser = nil then
     begin
       FBrowser := FHost.CreateBrowser(Self);
-      FBrowser.DefaultURL := BASE_URL;
+      FBrowser.DefaultURL := BASE_URL + '/index.htm';
       BridgeInitialize;
       FBrowser.OnAfterCreated := DoAfterCreated;
     end;
@@ -2070,6 +2199,7 @@ begin
   ExecuteScript(TemplateProvider.ImagesTemplate);
   ExecuteScript(TemplateProvider.PromptFileTemplate);
   ExecuteScript(TemplateProvider.AudioTemplate);
+  ExecuteScript(TemplateProvider.AudioRecordingTemplate);
   ExecuteScript(TemplateProvider.VideoTemplate);
   ExecuteScript(TemplateProvider.DisplayFileTemplate);
   ExecuteScript(TemplateProvider.SelectorTemplate);
@@ -2094,12 +2224,12 @@ procedure TFMXPythiaBridgeManager.DoNavigationCompleted(Sender: TObject;
   const aWebView: ICoreWebView2;
   const aArgs: ICoreWebView2NavigationCompletedEventArgs);
 begin
-  if FInitialNavigation then
-    Exit;
-
-  {--- Replace the initial host navigation with the in-memory HTML shell exactly once. }
-  aWebView.NavigateToString(PWideChar(TemplateProvider.InitialHtml));
-  FInitialNavigation := True;
+  {--- The shell is now served directly from the secure virtual host
+       (https://app.local/index.htm) instead of being injected through
+       NavigateToString, which produced an opaque/insecure origin. A secure
+       origin is required for powerful web APIs such as getUserMedia (audio
+       capture). Injection is still driven by the page's "ready" message, so
+       nothing needs to happen here on navigation completion. }
 end;
 
 procedure TFMXPythiaBridgeManager.DoNavigationStarting(Sender: TObject;
@@ -2582,6 +2712,11 @@ begin
   Result := FOnAfterSessionReloaded;
 end;
 
+function TFMXPythiaChatSessionManager.GetOnNewChatRequested: TProc;
+begin
+  Result := FOnNewChatRequested;
+end;
+
 function TFMXPythiaChatSessionManager.GetPersistentChat: IPersistentChat;
 begin
   Result := FPersistentChat;
@@ -2605,6 +2740,12 @@ procedure TFMXPythiaChatSessionManager.SetOnAfterSessionReloaded(
   const Value: TProc<string>);
 begin
   FOnAfterSessionReloaded := Value;
+end;
+
+procedure TFMXPythiaChatSessionManager.SetOnNewChatRequested(
+  const Value: TProc);
+begin
+  FOnNewChatRequested := Value;
 end;
 
 procedure TFMXPythiaChatSessionManager.SetPersistentChat(
@@ -3202,6 +3343,17 @@ begin
   );
 end;
 
+function TFMXPythiaInputBubble.BubbleInputInsertText(
+  const Value: string): Boolean;
+begin
+  {--- Insert at the caret. The text is escaped to a safe JS string literal,
+       so quotes/newlines/accents in a transcription cannot break the call.
+  }
+  Result := ExecuteScript(
+    Format(INPUT_BUBBLE_INSERT_TEXT_TEMPLATE, [TEscapeHelper.EscapeJSString(Value)])
+  );
+end;
+
 function TFMXPythiaInputBubble.BubbleInputWelcome(
   const Value: string): Boolean;
 begin
@@ -3360,6 +3512,17 @@ end;
 function TFMXPythiaKnowledgeIndexingManager.GetKnowledgeIndexingService: IKnowledgeIndexingService;
 begin
   Result := FKnowledgeIndexingService;
+end;
+
+function TFMXPythiaKnowledgeIndexingManager.GetAudioTranscriptionService: IAudioTranscriptionService;
+begin
+  Result := FAudioTranscriptionService;
+end;
+
+procedure TFMXPythiaKnowledgeIndexingManager.SetAudioTranscriptionService(
+  const Value: IAudioTranscriptionService);
+begin
+  FAudioTranscriptionService := Value;
 end;
 
 procedure TFMXPythiaKnowledgeIndexingManager.SetKnowledgeIndexingService(

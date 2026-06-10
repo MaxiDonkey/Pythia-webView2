@@ -73,6 +73,7 @@ type
     function AsDouble(const Path: string; const Default: Double = 0.0): Double;
 
     function ObjectText(const Path: string; const Default: string = ''): string;
+    function ObjectFieldNames(const Path: string = ''): TArray<string>;
     function ArrayText(const Path: string; const Default: string = ''): string;
     function Count(const Path: string; const Default: Integer = 0): Integer;
     function Format(const Format: Integer = 4): string;
@@ -568,6 +569,35 @@ begin
     Exit(Default);
 
   Result := R.GetPathObjectText(Path, Default);
+end;
+
+function TJsonReader.ObjectFieldNames(const Path: string): TArray<string>;
+begin
+  Result := [];
+
+  var R := Root;
+  if R = nil then
+    Exit;
+
+  var V: TJSONValue;
+  if Path.Trim.IsEmpty then
+    V := R
+  else
+    V := R.GetPathValue(Path);
+
+  if not (V is TJSONObject) then
+    Exit;
+
+  var Names := TList<string>.Create;
+  try
+    for var Pair in TJSONObject(V) do
+      if Assigned(Pair) and Assigned(Pair.JsonString) then
+        Names.Add(Pair.JsonString.Value);
+
+    Result := Names.ToArray;
+  finally
+    Names.Free;
+  end;
 end;
 
 function TJsonReader.ArrayFieldStrings(const ArrayPath,

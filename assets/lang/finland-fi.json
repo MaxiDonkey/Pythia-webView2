@@ -435,6 +435,7 @@
     "image_creation_aborted_error": "Oletusmallia ei ole määritetty: kuvan luonti keskeytetty",
     "video_creation_aborted_error": "Oletusmallia ei ole määritetty: videon luonti keskeytetty",
     "audio_creation_aborted_error": "Oletusmallia ei ole määritetty: äänen luonti keskeytetty",
+    "stt_operation_aborted_error": "Oletusmallia ei ole määritetty: STT-toiminto keskeytetty",
     "tts_operation_aborted_error": "Oletusmallia ei ole määritetty: TTS-toiminto keskeytetty",
     "deep_research_operation_aborted_error": "Oletusmallia ei ole määritetty: syvähaku keskeytetty",
     "missing_default_models_error": "Joistakin luokista puuttuu oletusmalli. #10 Tarkista malliasetukset",

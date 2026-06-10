@@ -73,7 +73,8 @@ type
     FileDropIn,
     PasteFromClipboard,
     FolderSelection,
-    FolderState
+    FolderState,
+    AudioRecord
   );
 
   TBrowserChatEventHelper = record Helper for TBrowserChatEvent
@@ -122,7 +123,8 @@ type
       'file-drop-in',
       'paste-from-clipboard',
       'folder-selection',
-      'folder-state'
+      'folder-state',
+      'audio-record'
     );
   public
     class function Parse(const Value: string): TBrowserChatEvent; static; inline;

@@ -435,6 +435,7 @@
     "image_creation_aborted_error": "Geen standaardmodel geconfigureerd: afbeelding maken afgebroken",
     "video_creation_aborted_error": "Geen standaardmodel geconfigureerd: video maken afgebroken",
     "audio_creation_aborted_error": "Geen standaardmodel geconfigureerd: audio maken afgebroken",
+    "stt_operation_aborted_error": "Geen standaardmodel geconfigureerd: STT-bewerking afgebroken",
     "tts_operation_aborted_error": "Geen standaardmodel geconfigureerd: TTS-bewerking afgebroken",
     "deep_research_operation_aborted_error": "Geen standaardmodel geconfigureerd: diepgaand onderzoek afgebroken",
     "missing_default_models_error": "Ontbrekende standaardmodellen voor sommige categorieën. #10 Controleer de modelinstellingen",

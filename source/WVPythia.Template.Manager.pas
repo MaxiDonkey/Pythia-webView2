@@ -1,4 +1,4 @@
-unit WVPythia.Template.Manager;
+ï»¿unit WVPythia.Template.Manager;
 
 interface
 
@@ -14,7 +14,7 @@ interface
   - The "NeverReloading" mode (see TemplateNeverReloading) is intended for a more typical/stable use,
     where files are loaded just once for performance.
 
-  No advanced caching logic here—this is intentional:
+  No advanced caching logic hereï¿½this is intentional:
   goal = clarity & simplicity for the community.
 
 *)
@@ -38,6 +38,7 @@ type
     js_images,
     js_promptFile,
     js_audio,
+    js_audioRecording,
     js_video,
     js_displayfile,
     js_selector,
@@ -68,6 +69,7 @@ type
         'scripts\DisplayImageTemplate.js',
         'scripts\PromptFileTemplate.js',
         'scripts\DisplayAudioTemplate.js',
+        'scripts\AudioRecordingTemplate.js',
         'scripts\DisplayVideoTemplate.js',
         'scripts\DisplayFileTemplate.js',
         'scripts\SelectorTemplate.js',
@@ -100,6 +102,7 @@ type
     function GetImagesTemplate: string;
     function GetPromptFileTemplate: string;
     function GetAudioTemplate: string;
+    function GetAudioRecordingTemplate: string;
     function GetVideoTemplate: string;
     function GetDisplayfileTemplate: string;
     function GetSelectorTemplate: string;
@@ -158,6 +161,7 @@ type
     property ImagesTemplate: string read GetImagesTemplate;
     property PromptFileTemplate: string read GetPromptFileTemplate;
     property AudioTemplate: string read GetAudioTemplate;
+    property AudioRecordingTemplate: string read GetAudioRecordingTemplate;
     property VideoTemplate: string read GetVideoTemplate;
     property DisplayfileTemplate: string read GetDisplayfileTemplate;
     property SelectorTemplate: string read GetSelectorTemplate;
@@ -187,6 +191,7 @@ type
     FImagesTemplate: string;
     FPromptFileTemplate: string;
     FAudioTemplate: string;
+    FAudioRecordingTemplate: string;
     FVideoTemplate: string;
     FDisplayfileTemplate: string;
     FSelectorTemplate: string;
@@ -220,6 +225,7 @@ type
     function GetImagesTemplate: string;
     function GetPromptFileTemplate: string;
     function GetAudioTemplate: string;
+    function GetAudioRecordingTemplate: string;
     function GetVideoTemplate: string;
     function GetDisplayfileTemplate: string;
     function GetConfirmationDialogTemplate: string;
@@ -297,6 +303,13 @@ begin
   if FAlwaysReloading then
     FAudioTemplate := LoadTemplate(js_audio.ToString);
   Result := FAudioTemplate;
+end;
+
+function TEdgeInjection.GetAudioRecordingTemplate: string;
+begin
+  if FAlwaysReloading then
+    FAudioRecordingTemplate := LoadTemplate(js_audioRecording.ToString);
+  Result := FAudioRecordingTemplate;
 end;
 
 function TEdgeInjection.GetBootstrapDictionaryTemplate: string;
@@ -485,6 +498,7 @@ begin
   FImagesTemplate := LoadTemplate(js_images.ToString);
   FPromptFileTemplate := LoadTemplate(js_promptFile.ToString);
   FAudioTemplate := LoadTemplate(js_audio.ToString);
+  FAudioRecordingTemplate := LoadTemplate(js_audioRecording.ToString);
   FVideoTemplate := LoadTemplate(js_video.ToString);
   FDisplayfileTemplate := LoadTemplate(js_displayfile.ToString);
   FSelectorTemplate := LoadTemplate(js_selector.ToString);

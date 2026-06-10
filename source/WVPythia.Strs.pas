@@ -55,6 +55,12 @@ var
     'Audio media shutdown failed';
   S_STOP_VIDEO_MEDIA_ERROR: string =
     'Video media shutdown failed';
+  S_AUDIO_RECORDING_START_ERROR: string =
+    'Audio recording could not be started';
+  S_AUDIO_RECORDING_STOP_ERROR: string =
+    'Audio recording could not be stopped';
+  S_AUDIO_RECORDING_SWITCH_ERROR: string =
+    'Audio recording could not be toggled';
   S_INTERNAL_THEME_ERROR: string =
     'Unable to update the page theme';
   S_DESERIALIZATION_ERROR_FMT: string =
@@ -76,6 +82,8 @@ var
     'No default model configured: Video creation aborted';
   S_AUDIO_CREATION_ABORTED_ERROR: string =
     'No default model configured: Audio creation aborted';
+  S_STT_OPERATION_ABORTED_ERROR: string =
+    'No default model configured: STT operation aborted';
   S_TTS_OPERATION_ABORTED_ERROR: string =
     'No default model configured: TTS operation aborted';
   S_DEEP_RESEARCH_OPERATION_ABORTED_ERROR: string =
@@ -175,6 +183,18 @@ begin
     'more.stop_video_media_error',
     S_STOP_VIDEO_MEDIA_ERROR);
 
+  S_AUDIO_RECORDING_START_ERROR := JSONObject.AsString(
+    'more.audio_recording_start_error',
+    S_AUDIO_RECORDING_START_ERROR);
+
+  S_AUDIO_RECORDING_STOP_ERROR := JSONObject.AsString(
+    'more.audio_recording_stop_error',
+    S_AUDIO_RECORDING_STOP_ERROR);
+
+  S_AUDIO_RECORDING_SWITCH_ERROR := JSONObject.AsString(
+    'more.audio_recording_switch_error',
+    S_AUDIO_RECORDING_SWITCH_ERROR);
+
   S_INTERNAL_THEME_ERROR := JSONObject.AsString(
     'more.internal_theme_error',
     S_INTERNAL_THEME_ERROR);
@@ -221,6 +241,11 @@ begin
     JSONObject.AsString(
     'more.audio_creation_aborted_error',
     S_AUDIO_CREATION_ABORTED_ERROR);
+
+  S_STT_OPERATION_ABORTED_ERROR :=
+    JSONObject.AsString(
+    'more.stt_operation_aborted_error',
+    S_STT_OPERATION_ABORTED_ERROR);
 
   S_TTS_OPERATION_ABORTED_ERROR :=
     JSONObject.AsString(

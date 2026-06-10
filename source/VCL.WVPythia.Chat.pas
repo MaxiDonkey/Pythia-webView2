@@ -419,11 +419,15 @@ type
   protected
     FOnChatSessionAutoRename: TProc<string, string>;
     FOnAfterSessionReloaded: TProc<string>;
+    FOnNewChatRequested: TProc;
     function GetOnChatSessionAutoRename: TProc<string, string>;
     procedure SetOnChatSessionAutoRename(const Value: TProc<string, string>);
 
     function GetOnAfterSessionReloaded: TProc<string>;
     procedure SetOnAfterSessionReloaded(const Value: TProc<string>);
+
+    function GetOnNewChatRequested: TProc;
+    procedure SetOnNewChatRequested(const Value: TProc);
 
     function ChatSessionDrawerOpen: Boolean;
     function ChatSessionDrawerClose: Boolean;
@@ -471,6 +475,7 @@ type
     function BubbleInputMenuOpen: Boolean;
     function BubbleInputClear: Boolean;
     function BubbleInputSetText(const Value: string): Boolean;
+    function BubbleInputInsertText(const Value: string): Boolean;
     function BubbleInputWelcome(const Value: string): Boolean; override;
   end;
 
@@ -521,9 +526,12 @@ type
   TVCLPythiaKnowledgeIndexingManager = class(TVCLPythiaFileUploadManager)
   private
     FKnowledgeIndexingService: IKnowledgeIndexingService;
+    FAudioTranscriptionService: IAudioTranscriptionService;
   protected
     function GetKnowledgeIndexingService: IKnowledgeIndexingService;
     procedure SetKnowledgeIndexingService(const Value: IKnowledgeIndexingService);
+    function GetAudioTranscriptionService: IAudioTranscriptionService;
+    procedure SetAudioTranscriptionService(const Value: IAudioTranscriptionService);
     function RecomputeSendButtonAvailability: Boolean;
   end;
 
@@ -573,6 +581,9 @@ type
     function Confirmation(const Value, Goal, Tag: string; const Index: Integer): Boolean;
     function DisplayChatSession: Boolean;
     procedure StopMedia;
+    procedure AudioRecordingStart;
+    procedure AudioRecordingStop;
+    procedure AudioRecordingSwitch;
     function UpdateFileDrawer: Boolean;
   public
     constructor Create(AOwner: TComponent); override;
@@ -585,6 +596,7 @@ type
 
     procedure Clear;
     procedure SetFocus;
+    procedure BringHostToFront;
     procedure BeginUpdate;
     procedure EndUpdate;
 
@@ -750,6 +762,9 @@ type
     /// Use it to restore any session-derived UI state (e.g. managed-agent chip).</summary>
     property OnAfterSessionReloaded: TProc<string> read GetOnAfterSessionReloaded write SetOnAfterSessionReloaded;
 
+    /// <summary>Occurs when the user requests a new blank chat from the browser UI.</summary>
+    property OnNewChatRequested: TProc read GetOnNewChatRequested write SetOnNewChatRequested;
+
     /// <summary>Allows the host to register custom command plugins during browser initialization.</summary>
     property OnRegisterCommandPlugins: TProc read FOnRegisterCommandPlugins write FOnRegisterCommandPlugins;
 
@@ -780,6 +795,17 @@ type
     /// </summary>
     property KnowledgeIndexingService: IKnowledgeIndexingService
       read GetKnowledgeIndexingService write SetKnowledgeIndexingService;
+
+    /// <summary>
+    /// Optional service invoked when a microphone capture file is ready
+    /// (produced browser-side through the recorder). When assigned, the
+    /// audio file is routed through <c>SubmitForTranscription</c> so the host
+    /// can perform speech-to-text asynchronously; Pythia then places the
+    /// recognized text into the input bubble. Producing the capture stays
+    /// vendor-agnostic, only the transcription step is delegated.
+    /// </summary>
+    property AudioTranscriptionService: IAudioTranscriptionService
+      read GetAudioTranscriptionService write SetAudioTranscriptionService;
 
     /// <summary>
     /// Occurs after the browser, bridge, settings, model list, capabilities,
@@ -1094,6 +1120,26 @@ begin
   {--- Group a sequence of DOM updates into a single render batch. }
   if not ExecuteScript(RENDER_BATCH_BEGIN_UPDATE) then
     raise EVCLPythiaException.Create(S_BATCH_BEGIN_ERROR);
+end;
+
+procedure TInterfacedVCLPythia.BringHostToFront;
+begin
+  if not Assigned(FWindowParent) then
+    Exit;
+
+  var HostForm := GetParentForm(FWindowParent);
+  if not Assigned(HostForm) then
+    Exit;
+
+  if HostForm.WindowState = wsMinimized then
+    HostForm.WindowState := wsNormal;
+
+  if not HostForm.Visible then
+    HostForm.Visible := True;
+
+  Application.Restore;
+  HostForm.BringToFront;
+  SetForegroundWindow(HostForm.Handle);
 end;
 
 procedure TInterfacedVCLPythia.Clear;
@@ -1880,6 +1926,12 @@ end;
 
 procedure TInterfacedVCLPythia.SetFocus;
 begin
+  if Assigned(FWindowParent) and FWindowParent.CanFocus then
+    FWindowParent.SetFocus;
+
+  if Assigned(FBrowser) then
+    FBrowser.SetFocus;
+
   if not PostWebMessageAsJson(SET_INPUT_BUBBLE_FOCUS, 'input-bubble-setfocus') then
     raise EVCLPythiaException.Create(S_FOCUS_ERROR);
 end;
@@ -1904,6 +1956,29 @@ procedure TInterfacedVCLPythia.StopAudio;
 begin
   if not ExecuteScript(STOP_AUDIO_TEMPLATE) then
     raise EVCLPythiaException.Create(S_STOP_AUDIO_MEDIA_ERROR);
+end;
+
+procedure TInterfacedVCLPythia.AudioRecordingStart;
+begin
+  {--- Ask the browser-side recorder to begin capturing the microphone.
+       The encoded audio is later returned through the "audio-record" event. }
+  if not PostWebMessageAsJson(AUDIO_RECORDING_START) then
+    raise EVCLPythiaException.Create(S_AUDIO_RECORDING_START_ERROR);
+end;
+
+procedure TInterfacedVCLPythia.AudioRecordingStop;
+begin
+  {--- Ask the browser-side recorder to finalize the capture. }
+  if not PostWebMessageAsJson(AUDIO_RECORDING_STOP) then
+    raise EVCLPythiaException.Create(S_AUDIO_RECORDING_STOP_ERROR);
+end;
+
+procedure TInterfacedVCLPythia.AudioRecordingSwitch;
+begin
+  {--- Toggle the browser-side recorder; the browser decides start vs stop
+       based on its live state, keeping the host free of recording state. }
+  if not PostWebMessageAsJson(AUDIO_RECORDING_SWITCH) then
+    raise EVCLPythiaException.Create(S_AUDIO_RECORDING_SWITCH_ERROR);
 end;
 
 procedure TInterfacedVCLPythia.StopMedia;
@@ -1950,7 +2025,7 @@ begin
   FWindowParent.Constraints.MinWidth := MIN_WIDTH;
   FWindowParent.Constraints.MinHeight := MIN_HEIGHT;
 
-  FBrowser.DefaultURL := BASE_URL;
+  FBrowser.DefaultURL := BASE_URL + '/index.htm';
   FBrowser.OnAfterCreated := DoAfterCreated;
 
   {--- The timer retries WebView2 startup until the global loader is ready. }
@@ -2059,6 +2134,7 @@ begin
   ExecuteScript(TemplateProvider.ImagesTemplate);
   ExecuteScript(TemplateProvider.PromptFileTemplate);
   ExecuteScript(TemplateProvider.AudioTemplate);
+  ExecuteScript(TemplateProvider.AudioRecordingTemplate);
   ExecuteScript(TemplateProvider.VideoTemplate);
   ExecuteScript(TemplateProvider.DisplayFileTemplate);
   ExecuteScript(TemplateProvider.SelectorTemplate);
@@ -2083,12 +2159,12 @@ procedure TVCLPythiaBridgeManager.DoNavigationCompleted(Sender: TObject;
   const aWebView: ICoreWebView2;
   const aArgs: ICoreWebView2NavigationCompletedEventArgs);
 begin
-  if FInitialNavigation then
-    Exit;
-
-  {--- Replace the initial host navigation with the in-memory HTML shell exactly once. }
-  aWebView.NavigateToString(PWideChar(TemplateProvider.InitialHtml));
-  FInitialNavigation := True;
+  {--- The shell is now served directly from the secure virtual host
+       (https://app.local/index.htm) instead of being injected through
+       NavigateToString, which produced an opaque/insecure origin. A secure
+       origin is required for powerful web APIs such as getUserMedia (audio
+       capture). Injection is still driven by the page's "ready" message, so
+       nothing needs to happen here on navigation completion. }
 end;
 
 procedure TVCLPythiaBridgeManager.DoNavigationStarting(Sender: TObject;
@@ -2568,6 +2644,11 @@ begin
   Result := FOnAfterSessionReloaded;
 end;
 
+function TVCLPythiaChatSessionManager.GetOnNewChatRequested: TProc;
+begin
+  Result := FOnNewChatRequested;
+end;
+
 function TVCLPythiaChatSessionManager.GetPersistentChat: IPersistentChat;
 begin
   Result := FPersistentChat;
@@ -2591,6 +2672,12 @@ procedure TVCLPythiaChatSessionManager.SetOnAfterSessionReloaded(
   const Value: TProc<string>);
 begin
   FOnAfterSessionReloaded := Value;
+end;
+
+procedure TVCLPythiaChatSessionManager.SetOnNewChatRequested(
+  const Value: TProc);
+begin
+  FOnNewChatRequested := Value;
 end;
 
 procedure TVCLPythiaChatSessionManager.SetPersistentChat(
@@ -3189,6 +3276,17 @@ begin
   );
 end;
 
+function TVCLPythiaInputBubble.BubbleInputInsertText(
+  const Value: string): Boolean;
+begin
+  {--- Insert at the caret (not a full replacement). The text is escaped to a
+       safe JS string literal, so quotes/newlines/accents in a transcription
+       cannot break the call. }
+  Result := ExecuteScript(
+    Format(INPUT_BUBBLE_INSERT_TEXT_TEMPLATE, [TEscapeHelper.EscapeJSString(Value)])
+  );
+end;
+
 function TVCLPythiaInputBubble.BubbleInputWelcome(
   const Value: string): Boolean;
 begin
@@ -3353,6 +3451,17 @@ procedure TVCLPythiaKnowledgeIndexingManager.SetKnowledgeIndexingService(
   const Value: IKnowledgeIndexingService);
 begin
   FKnowledgeIndexingService := Value;
+end;
+
+function TVCLPythiaKnowledgeIndexingManager.GetAudioTranscriptionService: IAudioTranscriptionService;
+begin
+  Result := FAudioTranscriptionService;
+end;
+
+procedure TVCLPythiaKnowledgeIndexingManager.SetAudioTranscriptionService(
+  const Value: IAudioTranscriptionService);
+begin
+  FAudioTranscriptionService := Value;
 end;
 
 function TVCLPythiaKnowledgeIndexingManager.RecomputeSendButtonAvailability: Boolean;

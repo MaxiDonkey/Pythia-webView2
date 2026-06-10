@@ -200,6 +200,8 @@
     host.__images = [];
     host.__knowledgeFiles = [];
     host.__speechToTextFiles = [];
+    host.__promptFragments = [];
+    host.__nextPasteFragmentIndex = 1;
     host.__integrationFunctions = [];
     host.__integrationMcps = [];
     host.__integrationSkills = [];
@@ -1208,6 +1210,27 @@
       autoResizeTextarea();
     }
 
+    function insertTextAtSelection(value, selectionStart, selectionEnd) {
+      const text = value == null ? "" : String(value);
+      const start = clampInputIndex(selectionStart || 0);
+      const end = clampInputIndex(selectionEnd || start);
+      const left = Math.min(start, end);
+      const right = Math.max(start, end);
+
+      rememberInputBeforeChange();
+
+      const nextValue =
+        textarea.value.slice(0, left) +
+        text +
+        textarea.value.slice(right);
+
+      textarea.value = nextValue;
+      autoResizeTextarea();
+
+      const caret = left + text.length;
+      textarea.setSelectionRange(caret, caret);
+    }
+
     function getWheelScrollableContainer(startNode) {
       if (!(startNode instanceof Element)) {
         return null;
@@ -1440,18 +1463,36 @@
 
     }
 
-    // Notify Delphi when an uploaded (or in-flight) file is removed from the
-    // compose box, so the upload service can cancel the in-flight transfer or
-    // delete the remote file. Files that never engaged the upload pipeline
-    // (no fileId, no uploading state) do not produce a notification.
+    // Notify Delphi whenever a file is removed from the compose box. Upload
+    // and indexing services tolerate unknown paths, while forwarding every
+    // removal avoids depending on asynchronous browser-side status updates.
     function notifyFileRemoved(removed) {
       if (!removed) return;
       if (!window.chrome || !window.chrome.webview) return;
-      if (!removed.fileId && removed.uploadStatus !== "uploading") return;
+      if (!removed.path) return;
 
       window.chrome.webview.postMessage({
         event: "file-removed",
         path: removed.path
+      });
+    }
+
+    function notifyFilesRemoved(removedFiles) {
+      removedFiles.forEach(notifyFileRemoved);
+    }
+
+    function removePromptFragmentsForPath(path) {
+      if (!path) return;
+
+      host.__promptFragments = host.__promptFragments.filter(function (fragment) {
+        return !fragment || fragment.fullPath !== path;
+      });
+    }
+
+    function removePromptFragmentsForFiles(files) {
+      (files || []).forEach(function (file) {
+        if (file && file.path)
+          removePromptFragmentsForPath(file.path);
       });
     }
 
@@ -1512,6 +1553,7 @@
         const chip = createChip("\uE16C", file.name, function () {
           const removed = host.__files.splice(i, 1)[0];
           notifyFileRemoved(removed);
+          removePromptFragmentsForPath(removed && removed.path);
           render();
         });
         applyUploadStatusToChip(chip, file);
@@ -1681,6 +1723,7 @@
               count: host.__knowledgeFiles.length
             }),
             function () {
+              notifyFilesRemoved(host.__knowledgeFiles);
               host.__knowledgeFiles = [];
               host.__features.delete("knowledge-search");
               render();
@@ -1706,6 +1749,8 @@
               count: host.__files.length
             }),
             function () {
+              notifyFilesRemoved(host.__files);
+              removePromptFragmentsForFiles(host.__files);
               host.__files = [];
               render();
             }
@@ -1928,6 +1973,24 @@
         });
       }
 
+      render();
+    };
+
+    window.onPasteFragmentSelected = function(fullPath, selectionStart, selectionEnd) {
+      if (!fullPath) return;
+
+      const normalizedPath = String(fullPath);
+      const parts = normalizedPath.split(/[\\/]+/);
+      const name = parts.length ? parts[parts.length - 1] : normalizedPath;
+      const placeholder = "[paste:p" + host.__nextPasteFragmentIndex++ + "]";
+
+      host.__promptFragments.push({
+        placeholder: placeholder,
+        name: name,
+        fullPath: normalizedPath
+      });
+
+      insertTextAtSelection(placeholder, selectionStart, selectionEnd);
       render();
     };
 
@@ -2197,6 +2260,15 @@
           fileId: f.fileId || null
         })),
 
+        promptFragments: host.__promptFragments
+          .filter(f => f && f.placeholder && f.fullPath)
+          .filter(f => (textarea.value || "").indexOf(f.placeholder) >= 0)
+          .map(f => ({
+            placeholder: f.placeholder,
+            name: f.name,
+            fullPath: f.fullPath
+          })),
+
         integration: {
           function: host.__integrationFunctions.map(f => ({
             id: f.id,
@@ -2238,6 +2310,47 @@
 
     window.setInputBubbleText = function (text) {
       setInputValue(text, true);
+    };
+
+    window.insertInputBubbleText = function (text) {
+      const insert = (text == null ? "" : String(text)).trim();
+      if (!insert)
+        return;
+
+      try {
+        textarea.focus({ preventScroll: true });
+      } catch (_) {
+        textarea.focus();
+      }
+
+      const value = textarea.value || "";
+      const start = clampInputIndex(textarea.selectionStart || 0);
+      const end = clampInputIndex(textarea.selectionEnd || start);
+      const left = Math.min(start, end);
+      const right = Math.max(start, end);
+
+      const before = value.slice(0, left);
+      const after = value.slice(right);
+
+      let piece = insert;
+
+      /*--- Pad the insertion so words never fuse with the surrounding text. */
+      if (before.length && !/\s$/.test(before) && !/^\s/.test(piece))
+        piece = " " + piece;
+
+      if (after.length && !/^\s/.test(after) && !/\s$/.test(piece))
+        piece = piece + " ";
+
+      insertTextAtSelection(piece, left, right);
+    };
+
+    window.setInputAudioRecording = function (active) {
+      if (!audioBtn)
+        return;
+
+      /*--- Toggles the red+bold "recording" look (see #InputAudioButton.is-recording
+            in index.htm). Driven by AudioRecordingTemplate on real start/stop. */
+      audioBtn.classList.toggle("is-recording", !!active);
     };
 
     window.setInputBubbleFocus = function () {
@@ -2312,6 +2425,8 @@
       host.__images = [];
       host.__knowledgeFiles = [];
       host.__speechToTextFiles = [];
+      host.__promptFragments = [];
+      host.__nextPasteFragmentIndex = 1;
 
       host.__features.delete("knowledge-search");
       host.__features.delete("media-text-to-speech");
@@ -3817,6 +3932,8 @@
 
       if (hasOwn("files") && !host.__enabledFunctions.chatFiles) {
         host.__files = [];
+        host.__promptFragments = [];
+        host.__nextPasteFragmentIndex = 1;
       }
 
       if (hasOwn("knowledgeSearch") && !host.__enabledFunctions.knowledgeSearch) {
@@ -4370,6 +4487,8 @@
     host.__images = [];
     host.__knowledgeFiles = [];
     host.__speechToTextFiles = [];
+    host.__promptFragments = [];
+    host.__nextPasteFragmentIndex = 1;
     host.__integrationFunctions = [];
     host.__integrationMcps = [];
     host.__integrationSkills = [];

@@ -435,6 +435,7 @@
     "image_creation_aborted_error": "Ingen standardmodell konfigurert: bildeoppretting avbrutt",
     "video_creation_aborted_error": "Ingen standardmodell konfigurert: videooppretting avbrutt",
     "audio_creation_aborted_error": "Ingen standardmodell konfigurert: lydoppretting avbrutt",
+    "stt_operation_aborted_error": "Ingen standardmodell konfigurert: STT-operasjon avbrutt",
     "tts_operation_aborted_error": "Ingen standardmodell konfigurert: TTS-operasjon avbrutt",
     "deep_research_operation_aborted_error": "Ingen standardmodell konfigurert: dypgående søk avbrutt",
     "missing_default_models_error": "Manglende standardmodeller for noen kategorier. #10 Sjekk modellinnstillingene",

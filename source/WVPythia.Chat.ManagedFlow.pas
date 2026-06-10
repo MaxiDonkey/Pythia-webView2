@@ -220,13 +220,13 @@ type
     FCreateImage: Boolean;
     FCreateVideo: Boolean;
     FCreateAudio: Boolean;
-    FSpeechToText: TArray<TListItems>;
+    FSpeechToText: TArray<TMediaItem>;
     FTextToSpeech: Boolean;
   public
     property CreateImage: Boolean read FCreateImage write FCreateImage;
     property CreateVideo: Boolean read FCreateVideo write FCreateVideo;
     property CreateAudio: Boolean read FCreateAudio write FCreateAudio;
-    property SpeechToText: TArray<TListItems> read FSpeechToText write FSpeechToText;
+    property SpeechToText: TArray<TMediaItem> read FSpeechToText write FSpeechToText;
     property TextToSpeech: Boolean read FTextToSpeech write FTextToSpeech;
 
     destructor Destroy; override;
