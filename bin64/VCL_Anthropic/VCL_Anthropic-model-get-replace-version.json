@@ -23,7 +23,7 @@
                 "Web research",
                 "Vision"
             ],
-            "model": "claude-opus-4-6",
+            "model": "claude-opus-4-5",
             "visible": true
         },
         {
@@ -67,6 +67,17 @@
             "sourceCategoryId": "audio",
             "featureLabels": [
                 "Text to speech"
+            ],
+            "model": "",
+            "visible": false
+        },
+        {
+            "id": "speechToText",
+            "label": "Speech to text",
+            "badge": "",
+            "sourceCategoryId": "audio",
+            "featureLabels": [
+                "Speech to text"
             ],
             "model": "",
             "visible": false
